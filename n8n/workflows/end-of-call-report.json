@@ -1,0 +1,119 @@
+{
+  "id": "oRACRgI5oTF5TSGk",
+  "name": "End-of-Call Report",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-server",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-eoc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "vapi-server",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PQXagW16N8ErYDM7",
+          "name": "VAPI Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.message;\nconst messageType = message.type || '';\nif (messageType !== 'end-of-call-report') {\n  return [{ json: { is_eoc: false } }];\n}\n\nconst vapiCallId = message.call?.id || '';\nconst summary = message.analysis?.summary || message.artifact?.messages?.map(m => m.content || '').join(' ').substring(0, 500) || 'No summary available';\nconst sentiment = message.analysis?.structuredData?.sentiment || 'neutral';\nconst callerPhone = message.call?.customer?.number || '';\nconst callerName = message.analysis?.structuredData?.callerName || 'Unknown';\nconst validSentiments = ['positive', 'neutral', 'negative'];\n\nreturn [{\n  json: {\n    is_eoc: true,\n    caller_name: callerName,\n    phone_number: callerPhone,\n    summary: summary,\n    sentiment: validSentiments.includes(sentiment) ? sentiment : 'neutral',\n    timestamp: new Date().toISOString(),\n    vapi_call_id: vapiCallId\n  }\n}];"
+      },
+      "id": "parse-eoc",
+      "name": "Parse EOC Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "eoc-check",
+              "leftValue": "={{ $json.is_eoc }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-eoc",
+      "name": "Is EOC?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { is_eoc, ...dbFields } = $input.first().json;\nreturn [{ json: dbFields }];"
+      },
+      "id": "strip-meta",
+      "name": "Strip Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, -60]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "interactions",
+        "dataToSend": "autoMapInputData"
+      },
+      "id": "sb-upsert",
+      "name": "Upsert Interaction",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [880, -60],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Parse EOC Envelope", "type": "main", "index": 0}]]
+    },
+    "Parse EOC Envelope": {
+      "main": [[{"node": "Is EOC?", "type": "main", "index": 0}]]
+    },
+    "Is EOC?": {
+      "main": [
+        [{"node": "Strip Meta", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Strip Meta": {
+      "main": [[{"node": "Upsert Interaction", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

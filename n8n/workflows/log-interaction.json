@@ -1,0 +1,126 @@
+{
+  "id": "fS60qOqtDuWyIReD",
+  "name": "Log Interaction",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "log-interaction",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-log",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "log-interaction",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PQXagW16N8ErYDM7",
+          "name": "VAPI Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.message;\nconst vapiCallId = message.call?.id || '';\nconst toolCall = message.toolCallList?.[0] || {};\nconst args = toolCall.function?.arguments || {};\n\nconst validSentiments = ['positive', 'neutral', 'negative'];\nconst sentiment = validSentiments.includes(args.sentiment) ? args.sentiment : 'neutral';\n\nreturn [{\n  json: {\n    caller_name: (args.caller_name || 'Unknown').trim(),\n    phone_number: (args.phone_number || '').trim(),\n    summary: (args.summary || '').trim(),\n    sentiment,\n    timestamp: new Date().toISOString(),\n    vapi_call_id: vapiCallId\n  }\n}];"
+      },
+      "id": "parse-log",
+      "name": "Parse Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "interactions",
+        "dataToSend": "autoMapInputData"
+      },
+      "id": "sb-insert",
+      "name": "Insert Interaction",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body;\nconst toolCallId = body.message?.toolCallList?.[0]?.id || body.message?.toolCalls?.[0]?.id || '';\nconst result = $input.first().json;\nreturn [{\n  json: {\n    results: [{\n      toolCallId,\n      result: JSON.stringify({ success: true, record_id: result.id || 'unknown' })\n    }]\n  }\n}];"
+      },
+      "id": "fmt-ok",
+      "name": "Format Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, -60]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body;\nconst toolCallId = body.message?.toolCallList?.[0]?.id || body.message?.toolCalls?.[0]?.id || '';\nreturn [{\n  json: {\n    results: [{\n      toolCallId,\n      result: JSON.stringify({ success: false, error: 'Failed to save interaction record' })\n    }]\n  }\n}];"
+      },
+      "id": "fmt-err",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 60]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "resp-ok",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, -60]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "resp-err",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, 60]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Parse Envelope", "type": "main", "index": 0}]]
+    },
+    "Parse Envelope": {
+      "main": [[{"node": "Insert Interaction", "type": "main", "index": 0}]]
+    },
+    "Insert Interaction": {
+      "main": [
+        [{"node": "Format Success", "type": "main", "index": 0}],
+        [{"node": "Format Error", "type": "main", "index": 0}]
+      ]
+    },
+    "Format Success": {
+      "main": [[{"node": "Respond Success", "type": "main", "index": 0}]]
+    },
+    "Format Error": {
+      "main": [[{"node": "Respond Error", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
