@@ -153,7 +153,7 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 - [x] **Update deploy script** — `VAPI_KB_ID` placeholder resolution
 - [x] **Test semantic search** — Exact match ("office hours") and paraphrased ("how can I appeal") both return correct results
 - [x] **Regression tests** — 20/20 passing
-- [ ] **Configure DB webhook** (manual) — Supabase Dashboard: `faqs` table → INSERT/UPDATE → `generate-embedding` function
+- [x] **Configure DB webhook** — PostgreSQL trigger via migration `006_faq_embedding_trigger.sql` (pg_net → Edge Function)
 - [ ] **Live voice test** — VAPI Dashboard "Talk" button → ask FAQ questions → verify KB retrieval
 
 **Status:** Implementation complete. DB webhook requires manual Dashboard config. Live voice test pending.
