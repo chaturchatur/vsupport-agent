@@ -1,0 +1,147 @@
+{
+  "id": "MbxKTCGUszqbCafS",
+  "name": "Lookup Caller",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lookup-caller",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-lookup",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "lookup-caller",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PQXagW16N8ErYDM7",
+          "name": "VAPI Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.message;\nconst toolCall = message.toolCallList?.[0] || {};\nconst toolCallId = toolCall.id || '';\nconst args = toolCall.function?.arguments || {};\n\n// Normalize US phone to E.164\nlet phone = (args.phone_number || '').trim();\nlet error = '';\nif (phone) {\n  const digits = phone.replace(/\\D/g, '');\n  if (digits.length === 10) phone = '+1' + digits;\n  else if (digits.length === 11 && digits[0] === '1') phone = '+' + digits;\n  else if (phone.startsWith('+') && digits.length >= 10) phone = '+' + digits;\n  else { error = 'invalid_phone'; phone = ''; }\n}\n\nconst lastName = (args.last_name || '').trim();\nconst claimNumber = (args.claim_number || '').trim();\n\nif (!phone && !lastName && !claimNumber && !error) {\n  error = 'no_params';\n}\n\n// Build PostgREST OR filter string for Supabase node.\n// Use phone_digits (generated column, strips '+') to avoid the\n// Supabase node's encodeURI() mangling '+' in E.164 numbers.\nconst conditions = [];\nif (phone) conditions.push(`phone_digits.eq.${phone.replace('+', '')}`);\nif (lastName) conditions.push(`last_name.ilike.${lastName}`);\nif (claimNumber) conditions.push(`claim_number.ilike.${claimNumber}`);\nconst filterString = conditions.length > 0 ? `or=(${conditions.join(',')})` : '';\n\nreturn [{\n  json: {\n    toolCallId,\n    phone_number: phone,\n    last_name: lastName,\n    claim_number: claimNumber,\n    filterString,\n    error\n  }\n}];"
+      },
+      "id": "parse-envelope",
+      "name": "Parse Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "customers",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "={{ $json.filterString }}"
+      },
+      "id": "sb-lookup",
+      "name": "Query Customers",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const envelope = $('Parse Envelope').first().json;\nconst toolCallId = envelope.toolCallId;\nconst error = envelope.error;\n\nlet result;\nif (error === 'invalid_phone') {\n  result = { found: false, error: true, message: 'The phone number provided appears to be invalid. Please ask the caller to provide their full phone number.' };\n} else if (error === 'no_params') {\n  result = { found: false, error: true, message: 'No search parameters provided. Please provide a phone number, last name, or claim number.' };\n} else {\n  const rows = $input.all().map(i => i.json).filter(r => r.id);\n  if (rows.length === 0) {\n    result = { found: false, message: 'No matching record found in our system.' };\n  } else if (rows.length === 1) {\n    const r = rows[0];\n    result = {\n      found: true, multiple: false,\n      first_name: r.first_name, last_name: r.last_name,\n      claim_number: r.claim_number, claim_status: r.claim_status,\n      claim_details: r.claim_details || '', phone_number: r.phone_number,\n      date_of_birth: r.date_of_birth || ''\n    };\n  } else {\n    result = {\n      found: true, multiple: true,\n      matches: rows.map(r => ({\n        first_name: r.first_name, last_name: r.last_name,\n        claim_number: r.claim_number, claim_status: r.claim_status\n      }))\n    };\n  }\n}\n\nreturn [{\n  json: {\n    results: [{ toolCallId, result: JSON.stringify(result) }]\n  }\n}];"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Envelope": {
+      "main": [
+        [
+          {
+            "node": "Query Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Customers": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Result": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
