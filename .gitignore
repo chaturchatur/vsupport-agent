@@ -21,6 +21,9 @@ build/
 .idea/
 .vscode/
 
+# Assessment
+problem-statement.md
+
 # Claude Code
 .claude/settings.local.json
 
