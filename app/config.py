@@ -12,10 +12,6 @@ class Settings(BaseSettings):
     n8n_api_key: str = ""
     n8n_webhook_base_url: str = ""
 
-    # FastAPI
-    fastapi_host: str = "0.0.0.0"
-    fastapi_port: int = 8000
-
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

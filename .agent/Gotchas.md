@@ -30,11 +30,11 @@ Known landmines, quirks, and non-obvious behaviors. Check here before debugging 
 | PostgREST `+` in phone numbers must be URL-encoded | The `+` in E.164 numbers (e.g. `+17185557777`) is interpreted as a space in URL query params. The Supabase node's `encodeURI()` preserves `+` (bad) and double-encodes `%2B` to `%252B` (also bad). **Fix:** Query the `phone_digits` generated column (strips `+`) instead of `phone_number`. The filter value is digits-only (e.g., `phone_digits.eq.17185557777`), so `encodeURI()` has nothing to mangle. See migration `002_phone_digits_column.sql`. |
 | PostgREST `ilike` for case-insensitive match | Used in lookup filter: `last_name.ilike.johnson`. This is case-insensitive exact match (no wildcards). Replaces the old `LOWER(last_name) = LOWER(...)` SQL pattern. |
 | Dedup via unique constraint + onError | End-of-call-report uses Supabase create with `onError: continueRegularOutput`. The UNIQUE constraint on `vapi_call_id` silently rejects duplicates — equivalent to `ON CONFLICT DO NOTHING`. |
-| Phone normalization is JS-only in n8n | The lookup-caller workflow normalizes phones using basic JS (strip non-digits + prepend +1). This handles common US formats but won't work for international numbers. For robust normalization, use FastAPI's `/normalize-phone` endpoint (Python `phonenumbers` lib). |
+| Phone normalization is JS-only in n8n | The lookup-caller workflow normalizes phones using basic JS (strip non-digits + prepend +1). This handles common US formats but won't work for international numbers. |
 | Workflow JSONs are NOT auto-deployed | The repo exports (`n8n/workflows/`) are reference copies only. After editing them locally, run `./scripts/deploy-n8n.sh` to push to n8n Cloud via the REST API. There is no CI/CD trigger — forgetting this step means live workflows diverge from repo. |
 | n8n API rejects read-only fields | The `PUT /workflows/{id}` endpoint rejects `id`, `active`, `createdAt`, `updatedAt`, `versionId` in the request body. The deploy script strips these automatically. |
 
-## FastAPI / Testing
+## Testing
 
 | Gotcha | Detail |
 |--------|--------|

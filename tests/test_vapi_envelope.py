@@ -1,43 +1,6 @@
 import json
 
 # ---------------------------------------------------------------------------
-# FastAPI endpoint tests
-# ---------------------------------------------------------------------------
-
-
-def test_health(client):
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-
-
-def test_normalize_phone_endpoint(client):
-    response = client.post("/normalize-phone", json={"phone_number": "(415) 555-1234"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["normalized"] == "+14155551234"
-    assert data["valid"] is True
-
-
-def test_normalize_phone_invalid(client):
-    response = client.post("/normalize-phone", json={"phone_number": "garbage"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["valid"] is False
-
-
-def test_normalize_phone_custom_region(client):
-    response = client.post(
-        "/normalize-phone",
-        json={"phone_number": "020 7946 0958", "default_region": "GB"},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["normalized"] == "+442079460958"
-    assert data["valid"] is True
-
-
-# ---------------------------------------------------------------------------
 # VAPI webhook envelope parsing tests
 #
 # These validate that the payload structures VAPI sends to n8n webhooks
