@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vsupport-agent — Engineering Presentation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #FAFAFA;
@@ -38,7 +38,7 @@
     --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
     --shadow-lg: 0 4px 20px rgba(0,0,0,0.08);
     --font-body: 'DM Sans', -apple-system, sans-serif;
-    --font-display: 'Instrument Serif', Georgia, serif;
+    --font-display: 'Instrument Sans', -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
     --radius: 12px;
     --radius-sm: 8px;
@@ -94,7 +94,7 @@
   h1 {
     font-family: var(--font-display);
     font-size: 64px;
-    font-weight: 400;
+    font-weight: 600;
     line-height: 1.08;
     margin-bottom: 8px;
     color: var(--text-primary);
@@ -106,7 +106,7 @@
   h2 {
     font-family: var(--font-display);
     font-size: 48px;
-    font-weight: 400;
+    font-weight: 600;
     line-height: 1.12;
     margin-bottom: 4px;
     color: var(--text-primary);
@@ -370,7 +370,7 @@
   .compare-box { flex: 1; border-radius: var(--radius); padding: 24px; text-align: center; }
   .compare-box--new { background: var(--accent-soft); border: 1px solid var(--accent-border); }
   .compare-box--old { background: var(--coral-soft); border: 1px solid rgba(220,74,58,0.2); }
-  .compare-val { font-family: var(--font-display); font-size: 52px; margin-bottom: 4px; }
+  .compare-val { font-family: var(--font-display); font-size: 52px; font-weight: 600; margin-bottom: 4px; }
   .compare-label { font-size: 16px; color: var(--text-secondary); }
 
   /* ── Bullet list ── */
@@ -482,6 +482,18 @@
     min-width: 44px;
     text-align: center;
   }
+
+  /* ── Diagram slides ── */
+  .diagram-slide { justify-content: center; align-items: center; text-align: center; }
+  .diagram-slide img {
+    max-width: 95%;
+    max-height: 82vh;
+    object-fit: contain;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+  }
+  .diagram-slide h2 { margin-bottom: 12px; }
+  .diagram-slide { padding: 24px 4vw; }
 
   /* ── Corner gradients (Observe.AI style) ── */
   .slide::before,
@@ -785,74 +797,14 @@
     </div>
   </div>
 
-  <!-- ═══════════ SLIDE 6: DATA FLOW ═══════════ -->
-  <div class="slide slide--light" data-slide="6">
-    <div class="slide-number">06 &middot; Architecture Diagram &amp; Data Flow</div>
-    <h2>How data <em>moves</em></h2>
-    <div class="scroll-area" style="margin-top:16px;">
-      <div class="card" style="margin-bottom:10px;">
-        <div class="card-label">Voice Pipeline</div>
-        <div class="flow" style="margin-bottom:0;">
-          <div class="flow-step">Caller dials in</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step flow-step--accent">VAPI picks up</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">Deepgram STT</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">GPT-4o</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">ElevenLabs TTS</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">Audio out</div>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:10px;">
-        <div class="card-label">Tool Calls (LLM-triggered)</div>
-        <div class="flow" style="margin-bottom:0;">
-          <div class="flow-step">GPT-4o triggers tool</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step flow-step--accent">VAPI POST → n8n webhook</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">n8n → Supabase REST (PostgREST)</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">Response → GPT-4o</div>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:10px;">
-        <div class="card-label">FAQ RAG (auto-triggered by VAPI)</div>
-        <div class="flow" style="margin-bottom:0;">
-          <div class="flow-step">Caller asks question</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">VAPI STT</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step flow-step--accent">VAPI → search-faq Edge Function</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">gte-small embed</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">pgvector search</div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-step">Top 3 → LLM context</div>
-        </div>
-      </div>
-      <h3 style="margin-top:16px;">Auth at Every Layer</h3>
-      <div style="display:flex;gap:12px;">
-        <div class="card" style="flex:1;text-align:center;">
-          <code style="color:var(--accent);background:var(--accent-soft);">x-vapi-secret</code>
-          <div style="font-size:17px;color:var(--text-tertiary);margin-top:4px;">VAPI → n8n</div>
-        </div>
-        <div class="card" style="flex:1;text-align:center;">
-          <code style="color:var(--accent);background:var(--accent-soft);">HMAC SHA-256</code>
-          <div style="font-size:17px;color:var(--text-tertiary);margin-top:4px;">VAPI → Edge Function (KB)</div>
-        </div>
-        <div class="card" style="flex:1;text-align:center;">
-          <code style="color:var(--accent);background:var(--accent-soft);">Service role key</code>
-          <div style="font-size:17px;color:var(--text-tertiary);margin-top:4px;">n8n → Supabase</div>
-        </div>
-      </div>
-    </div>
+  <!-- ═══════════ SLIDE 6: ARCHITECTURE DIAGRAM ═══════════ -->
+  <div class="slide slide--light diagram-slide" data-slide="6">
+    <div class="slide-number">06 &middot; Architecture Diagram</div>
+    <h2>System <em>Architecture</em></h2>
+    <img src="diagrams/architecture.png" alt="Architecture diagram showing VAPI, n8n, and Supabase integration">
   </div>
 
-  <!-- ═══════════ SLIDE 7: LOOKUP_CALLER ═══════════ -->
+  <!-- ═══════════ SLIDE 8: LOOKUP_CALLER ═══════════ -->
   <div class="slide slide--warm" data-slide="7">
     <div class="slide-number">07 &middot; n8n Workflows</div>
     <h2><em>lookup_caller</em> — 5 nodes, linear</h2>
@@ -990,8 +942,15 @@
     </div>
   </div>
 
-  <!-- ═══════════ SLIDE 10: RAG SYSTEM ═══════════ -->
-  <div class="slide slide--light" data-slide="10">
+  <!-- ═══════════ DIAGRAM: N8N WORKFLOWS ═══════════ -->
+  <div class="slide slide--light diagram-slide" data-slide="10">
+    <div class="slide-number">n8n Workflow Diagram</div>
+    <h2>Workflow <em>Overview</em></h2>
+    <img src="diagrams/n8n-workflows.png" alt="n8n workflows diagram showing all webhook handlers and data flows">
+  </div>
+
+  <!-- ═══════════ SLIDE 12: RAG SYSTEM ═══════════ -->
+  <div class="slide slide--light" data-slide="11">
     <div class="slide-number">10 &middot; RAG System</div>
     <h2>FAQ <em>Semantic Search</em></h2>
     <p class="subtitle" style="margin-bottom:12px;">VAPI has a built-in Knowledge Base feature. When a caller asks a general question, VAPI automatically sends a <code>knowledge-base-request</code> to the <code>search-faq</code> Edge Function. The LLM doesn't trigger this — VAPI does it before the LLM even sees the message.</p>
@@ -1041,8 +1000,15 @@
     </div>
   </div>
 
-  <!-- ═══════════ SLIDE 11: CONVERSATIONAL AI CONFIG ═══════════ -->
-  <div class="slide slide--warm" data-slide="11">
+  <!-- ═══════════ DIAGRAM: RAG WORKFLOWS ═══════════ -->
+  <div class="slide slide--warm diagram-slide" data-slide="12">
+    <div class="slide-number">RAG Diagram</div>
+    <h2>RAG <em>Pipeline</em></h2>
+    <img src="diagrams/rag-workflows.png" alt="RAG workflow diagram showing embedding, vector search, and knowledge base flow">
+  </div>
+
+  <!-- ═══════════ SLIDE 14: CONVERSATIONAL AI CONFIG ═══════════ -->
+  <div class="slide slide--warm" data-slide="13">
     <div class="slide-number">11 &middot; Conversational AI</div>
     <h2>VAPI <em>Configuration</em></h2>
     <div class="cols" style="margin-top:14px;">
@@ -1090,7 +1056,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 12: SYSTEM PROMPT ═══════════ -->
-  <div class="slide slide--light" data-slide="12">
+  <div class="slide slide--light" data-slide="14">
     <div class="slide-number">12 &middot; Conversational AI</div>
     <h2>System Prompt — <em>10 Sections</em></h2>
     <div class="scroll-area" style="margin-top:14px;">
@@ -1113,7 +1079,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 13: KEY DESIGN CHOICES ═══════════ -->
-  <div class="slide slide--warm" data-slide="13">
+  <div class="slide slide--warm" data-slide="15">
     <div class="slide-number">13 &middot; Conversational AI</div>
     <h2>Key <em>Design Choices</em></h2>
     <div class="scroll-area" style="margin-top:16px;">
@@ -1141,7 +1107,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 14: LATENCY ═══════════ -->
-  <div class="slide slide--light" data-slide="14">
+  <div class="slide slide--light" data-slide="16">
     <div class="slide-number">14 &middot; Latency</div>
     <h2>Per-Turn <em>Budget</em></h2>
     <p class="subtitle">Source: VAPI dashboard (measured).</p>
@@ -1174,26 +1140,15 @@
     </div>
   </div>
 
-  <!-- ═══════════ SLIDE 15: CONVERSATION FLOW DIAGRAM ═══════════ -->
-  <div class="slide slide--warm" data-slide="15">
-    <div class="slide-number">15 &middot; Conversation Flow</div>
-    <h2>17 States, <em>Color-Coded</em></h2>
-    <div style="margin-top:16px;display:flex;gap:16px;flex-wrap:wrap;">
-      <div style="display:flex;align-items:center;gap:6px;"><div style="width:14px;height:14px;border-radius:4px;background:#22C55E;"></div><span style="font-size:17px;">Happy path (greeting → auth → claim → wrap-up)</span></div>
-      <div style="display:flex;align-items:center;gap:6px;"><div style="width:14px;height:14px;border-radius:4px;background:#EAB308;"></div><span style="font-size:17px;">Re-verification (name mismatch → retry, DOB fail → second attempt)</span></div>
-      <div style="display:flex;align-items:center;gap:6px;"><div style="width:14px;height:14px;border-radius:4px;background:#EF4444;"></div><span style="font-size:17px;">Error/escalation (identity denial, system errors, human transfer)</span></div>
-      <div style="display:flex;align-items:center;gap:6px;"><div style="width:14px;height:14px;border-radius:4px;background:#A855F7;"></div><span style="font-size:17px;">FAQ (Knowledge Base queries via RAG)</span></div>
-    </div>
-    <div style="flex:1;display:flex;align-items:center;justify-content:center;margin-top:16px;">
-      <div class="card" style="text-align:center;padding:40px 60px;">
-        <p style="font-size:16px;color:var(--text-secondary);">See <strong>conversation-flow.png</strong> diagram</p>
-        <p style="font-size:17px;color:var(--text-tertiary);margin-top:8px;">Full state machine with all 17 states and transition conditions</p>
-      </div>
-    </div>
+  <!-- ═══════════ SLIDE: CONVERSATION FLOW DIAGRAM ═══════════ -->
+  <div class="slide slide--light diagram-slide" data-slide="17">
+    <div class="slide-number">Conversation Flow</div>
+    <h2>State Machine — <em>17 States</em></h2>
+    <img src="diagrams/conversation-flow.png" alt="Conversation flow state machine with 17 states and transition conditions">
   </div>
 
-  <!-- ═══════════ SLIDE 16: COST ═══════════ -->
-  <div class="slide slide--light" data-slide="16">
+  <!-- ═══════════ SLIDE 17: COST ═══════════ -->
+  <div class="slide slide--light" data-slide="18">
     <div class="slide-number">16 &middot; Cost</div>
     <h2>Per-Call <em>Breakdown</em></h2>
     <div class="cols" style="margin-top:16px;">
@@ -1239,7 +1194,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 17: SCALABILITY SAAS ═══════════ -->
-  <div class="slide slide--warm" data-slide="17">
+  <div class="slide slide--warm" data-slide="19">
     <div class="slide-number">17 &middot; Scalability</div>
     <h2>SaaS <em>Path</em></h2>
     <div class="phase-cards" style="margin-top:20px;">
@@ -1276,7 +1231,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 18: HYBRID OSS ═══════════ -->
-  <div class="slide slide--light" data-slide="18">
+  <div class="slide slide--light" data-slide="20">
     <div class="slide-number">18 &middot; Scalability</div>
     <h2>Hybrid <em>OSS + SaaS</em> Path</h2>
     <p class="subtitle" style="margin-bottom:12px;">Own the orchestration layer (where VAPI's per-minute markup lives), keep best-in-class APIs for telephony and speech.</p>
@@ -1312,7 +1267,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 19: HYBRID COST COMPARISON ═══════════ -->
-  <div class="slide slide--warm" data-slide="19">
+  <div class="slide slide--warm" data-slide="21">
     <div class="slide-number">19 &middot; Scalability</div>
     <h2>Hybrid <em>Cost Comparison</em></h2>
     <p class="subtitle">Per-call cost for a 5 min avg call.</p>
@@ -1350,7 +1305,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 20: WAR STORIES ═══════════ -->
-  <div class="slide slide--light" data-slide="20">
+  <div class="slide slide--light" data-slide="22">
     <div class="slide-number">20 &middot; Engineering Challenges</div>
     <h2><em>War Stories</em></h2>
     <div class="scroll-area" style="margin-top:16px;">
@@ -1374,7 +1329,7 @@
   </div>
 
   <!-- ═══════════ SLIDE 21: CLOSING ═══════════ -->
-  <div class="slide slide--dark" data-slide="21">
+  <div class="slide slide--dark" data-slide="23">
     <div class="slide-number">21 &middot; Closing</div>
     <h2>What This <em>Proves</em></h2>
     <div class="cols" style="margin-top:20px;">
