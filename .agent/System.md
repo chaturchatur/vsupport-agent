@@ -178,7 +178,7 @@ FAQ insertion:
 
 **Deployment**: Run `./scripts/deploy-vapi.sh` to create/update. Uses VAPI REST API (`POST /assistant` or `PATCH /assistant/:id`) since the VAPI CLI `create` command is interactive-only.
 
-**Phone number**: Not yet provisioned (~$1.50/mo US number). Test via VAPI Dashboard "Talk" button in the meantime.
+**Phone number**: +1 (240) 664-9401 (VAPI provider, ID `d89b83ae-9b20-4f09-a8ba-f63d0584e671`). Assigned to Observe Insurance Claims Assistant.
 
 ---
 

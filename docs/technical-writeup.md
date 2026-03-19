@@ -8,7 +8,7 @@ The system is a 5-layer stack where each layer handles a single concern:
 
 | Layer | Component | Role |
 |-------|-----------|------|
-| **Telephony + Voice** | VAPI | Orchestrates the full audio loop: caller speech in → STT → LLM → TTS → audio out |
+| **Telephony + Voice** | VAPI (HIPAA-enabled) | Orchestrates the full audio loop: caller speech in → STT → LLM → TTS → audio out. BAA-eligible mode — no call recording/logging by VAPI |
 | **Speech-to-Text** | Deepgram Nova-2 | Real-time transcription with 300ms endpointing |
 | **LLM** | GPT-4o (temp 0.3, 500 max tokens) | Conversation reasoning, tool calling, DOB verification |
 | **Text-to-Speech** | ElevenLabs "Sarah" | Natural-sounding female voice matching the persona |
@@ -20,7 +20,7 @@ The system is a 5-layer stack where each layer handles a single concern:
 ### Why These Specific Tools
 
 **VAPI over Retell/LiveKit/Pipecat:**
-VAPI was chosen because it provides a fully managed telephony layer with native integrations to Deepgram, OpenAI, and ElevenLabs — eliminating the need to manage WebSocket audio streams, SIP trunking, or turn-taking logic ourselves. Its `assistant-speaks-first` mode, built-in `endCall` function, and `analysisPlan` for post-call structured data extraction meant we could focus on conversation logic rather than telephony plumbing. The trade-off is the $0.05/min platform fee, but for a prototype this buys significant development speed.
+VAPI was chosen because it provides a fully managed telephony layer with native integrations to Deepgram, OpenAI, and ElevenLabs — eliminating the need to manage WebSocket audio streams, SIP trunking, or turn-taking logic ourselves. Its `assistant-speaks-first` mode, built-in `endCall` function, and `analysisPlan` for post-call structured data extraction meant we could focus on conversation logic rather than telephony plumbing. Critically, VAPI supports `hipaaEnabled: true` which activates BAA-eligible mode — no call audio is recorded or logged by VAPI, a requirement for handling insurance claim data. The trade-off is the $0.05/min platform fee, but for a prototype this buys significant development speed.
 
 **Deepgram Nova-2 for STT:**
 Nova-2 is optimized for real-time streaming with low word error rates on phone-quality audio. The 300ms endpointing setting balances responsiveness (caller doesn't wait too long for a response) against not cutting speakers off mid-utterance. Deepgram's built-in noise handling pairs well with VAPI's `backgroundDenoisingEnabled: true`.
@@ -42,6 +42,15 @@ The original prototype used Airtable, but we migrated to Supabase to solve three
 
 **Supabase Edge Functions + gte-small for FAQ RAG:**
 Instead of calling OpenAI's embedding API, we use `Supabase.ai.Session("gte-small")` which runs the embedding model directly on Supabase infrastructure. Zero external API costs, zero additional latency (function and database are co-located), and the 384-dimensional vectors are small enough for fast similarity search. The `match_faqs` RPC uses pgvector's inner product operator (`<#>`) which is equivalent to cosine similarity for L2-normalized vectors but computationally faster.
+
+**VAPI Knowledge Base as a separate resource:**
+The FAQ RAG pipeline connects to VAPI via the Custom Knowledge Base feature. A non-obvious API constraint: knowledge bases are standalone resources created via `POST /knowledge-base` with their own IDs, then referenced in the assistant config via `model.knowledgeBaseId`. Placing `knowledgeBase` at the assistant's top level returns a 400 error. The KB resource's `server.secret` field handles auth — it sends an `x-vapi-signature` HMAC SHA256 header to the Edge Function endpoint, which is distinct from the `x-vapi-secret` header used for tool call webhooks.
+
+**DOB verification as LLM-side logic (no extra tool or workflow):**
+After phone/name verification, the agent asks for the caller's date of birth. Rather than building a dedicated `verify_dob` tool call and n8n workflow, we return the `date_of_birth` field in the `lookup_caller` response and instruct the LLM (via system prompt Section 2b) to compare the caller's spoken DOB against the stored value. Two attempts are allowed before escalation. The stored DOB is never read back to the caller. This works because the LLM already has the customer record in context and can flexibly parse spoken dates ("March fifteenth, nineteen eighty-five" vs. `1985-03-15`) — something a rigid server-side comparison would struggle with.
+
+**Scripted deployment via REST API:**
+VAPI's CLI `create` and `update` commands are interactive-only (no `--body` flag). Deployment uses `scripts/deploy-vapi.sh`, which resolves placeholder URLs (`{{N8N_WEBHOOK_BASE_URL}}`, `{{VAPI_SECRET}}`) in the config template and calls the VAPI REST API (`POST /assistant` or `PATCH /assistant/:id`) directly.
 
 ### How It Scales for Production
 
