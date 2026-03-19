@@ -22,12 +22,12 @@ Each decision entry follows this format:
 
 ## Decisions
 
-### [2025-XX-XX] n8n Cloud as primary integration layer (not FastAPI)
+### [2025-XX-XX] n8n Cloud as primary integration layer (not a custom backend)
 **Status:** accepted
 **Context:** Needed to connect VAPI tool calls to Airtable for caller lookup and interaction logging.
-**Decision:** Use n8n Cloud for all webhook handling and Airtable CRUD. FastAPI stays as a thin utility layer (phone normalization only).
-**Why:** n8n provides visual workflow editing, built-in Airtable nodes, and webhook handling with zero boilerplate. Keeps FastAPI lightweight and avoids duplicating integration logic.
-**Alternatives considered:** Building all integrations in FastAPI; using Zapier instead of n8n.
+**Decision:** Use n8n Cloud for all webhook handling and DB CRUD. No custom backend needed.
+**Why:** n8n provides visual workflow editing, built-in Supabase nodes, and webhook handling with zero boilerplate. Eliminates the need for a separate backend server.
+**Alternatives considered:** Building all integrations in a custom backend; using Zapier instead of n8n.
 
 ### [2025-XX-XX] VAPI tool definitions inside `model.tools[]`, not top-level
 **Status:** accepted
@@ -64,13 +64,13 @@ Each decision entry follows this format:
 **Why:** Proper database features — indexes, unique constraints (`vapi_call_id UNIQUE`), `INSERT ON CONFLICT DO NOTHING` for atomic dedup. Eliminates 10s wait hack entirely.
 **Alternatives considered:** Keeping Airtable and working around limits.
 
-### [2026-03-17] n8n Postgres node → Supabase (not FastAPI as DB intermediary)
+### [2026-03-17] n8n Postgres node → Supabase (not a custom backend as DB intermediary)
 **Status:** superseded
-**Context:** Initial Supabase migration routed n8n → FastAPI (HTTP Request) → Supabase (supabase-py). This required deploying FastAPI to a cloud host reachable from n8n Cloud, meaning two separate cloud services to manage.
-**Decision:** Use n8n's built-in Postgres node to connect directly to Supabase. FastAPI reverts to utility-only (`/health`, `/normalize-phone`).
-**Why:** Eliminates the need to host FastAPI on a separate cloud. Single-cloud deployment (n8n Cloud) with Supabase as managed database. Simpler operational overhead.
-**Alternatives considered:** FastAPI as DB intermediary (more testable Python code, but requires managing a second cloud deployment).
-**Supersedes:** Initial Supabase migration approach (FastAPI as DB layer).
+**Context:** Initial Supabase migration considered routing n8n → custom backend (HTTP Request) → Supabase. This would require deploying a backend server reachable from n8n Cloud, meaning two separate cloud services to manage.
+**Decision:** Use n8n's built-in Postgres node to connect directly to Supabase.
+**Why:** Single-cloud deployment (n8n Cloud) with Supabase as managed database. Simpler operational overhead.
+**Alternatives considered:** Custom backend as DB intermediary (more testable Python code, but requires managing a second cloud deployment).
+**Supersedes:** Initial Supabase migration approach.
 **Superseded by:** Supabase node via REST API (below).
 
 ### [2026-03-17] Supabase node (REST API) instead of Postgres node (wire protocol)
@@ -119,10 +119,10 @@ Each decision entry follows this format:
 
 ### [2026-03-17] JS-based phone normalization in n8n Code nodes
 **Status:** accepted
-**Context:** With FastAPI out of the DB path, phone normalization for customer lookups can no longer use the Python `phonenumbers` library in-line. Need an alternative in n8n.
+**Context:** Phone normalization for customer lookups needed an in-workflow solution.
 **Decision:** Normalize US phone numbers to E.164 in n8n Code nodes using basic JS (strip non-digits, prepend +1 for 10-digit numbers).
-**Why:** Sufficient for US numbers (the only region this demo handles). Avoids re-introducing FastAPI into the data path just for normalization. The FastAPI `/normalize-phone` endpoint still exists for other use cases.
-**Alternatives considered:** Calling FastAPI `/normalize-phone` from n8n (adds latency and re-introduces the FastAPI dependency).
+**Why:** Sufficient for US numbers (the only region this demo handles). No external dependency needed.
+**Alternatives considered:** Python-based normalization via a separate service (adds latency and operational overhead).
 
 ### [2026-03-18] Add `callerName` to VAPI structuredDataPlan schema
 **Status:** accepted

@@ -38,17 +38,14 @@ Caller  ──phone──▶  VAPI  (Deepgram STT → GPT-4o → ElevenLabs TTS)
 | **Workflow Engine** | n8n Cloud | Webhook auth, envelope parsing, all DB operations |
 | **Database** | Supabase PostgreSQL | Customers, interactions, FAQs (pgvector) |
 | **FAQ Search** | Supabase Edge Functions + pgvector | Semantic search with gte-small embeddings |
-| **Backend** | Python + FastAPI | Utility layer (phone normalization) |
+| **Config** | Python + Pydantic Settings | Environment configuration |
 
 ## Project Structure
 
 ```
 Vsupport-agent/
-├── app/                          # FastAPI utility layer
-│   ├── main.py                   # /health, /normalize-phone endpoints
-│   ├── config.py                 # Pydantic Settings (.env)
-│   ├── schemas.py                # Request/response models
-│   └── services/phone.py         # E.164 phone normalization (phonenumbers lib)
+├── app/
+│   └── config.py                 # Pydantic Settings (.env)
 ├── vapi/
 │   ├── assistant_config.json     # Full VAPI assistant config (GPT-4o, tools, analysis)
 │   └── system_prompt.md          # Conversational system prompt (version-controlled)
@@ -69,7 +66,7 @@ Vsupport-agent/
 │   └── error-path-script.md      # Demo: re-verification & error flows
 ├── diagrams/                     # Excalidraw diagrams + rendered PNGs
 ├── data/faqs.json                # FAQ source data (18 entries)
-├── tests/                        # 20 tests (phone, endpoints, VAPI envelopes)
+├── tests/                        # 10 tests (VAPI envelope parsing)
 ├── docs/
 │   └── interview-briefing.md     # Technical write-up (architecture, costs, HIPAA)
 └── requirements.txt
@@ -134,19 +131,13 @@ supabase secrets set VAPI_SECRET=your_secret
 
 This resolves `{{N8N_WEBHOOK_BASE_URL}}`, `{{VAPI_SECRET}}`, and `{{VAPI_KB_ID}}` placeholders in the config and creates/updates the assistant via the VAPI REST API.
 
-### Run FastAPI (Development)
-
-```bash
-uvicorn app.main:app --reload
-```
-
 ### Run Tests
 
 ```bash
 pytest tests/
 ```
 
-All 20 tests cover phone normalization, FastAPI endpoints, and VAPI envelope parsing.
+All 10 tests cover VAPI envelope parsing.
 
 ## n8n Workflows
 
@@ -187,7 +178,7 @@ Three workflows running on n8n Cloud, all authenticated via `X-Vapi-Secret` head
 
 ## Key Design Decisions
 
-- **n8n as primary integration layer** — All VAPI webhooks and DB operations go through n8n Cloud. FastAPI stays utility-only, keeping the architecture simple and the codebase small.
+- **n8n as primary integration layer** — All VAPI webhooks and DB operations go through n8n Cloud, keeping the architecture simple and the codebase small.
 - **Supabase over Airtable** — Migrated from Airtable for pgvector support (FAQ RAG), proper constraints (UNIQUE for dedup), and generated columns (`phone_digits` to avoid PostgREST encoding bugs).
 - **`phone_digits` generated column** — Strips `+` from E.164 phone numbers to work around the Supabase n8n node's `encodeURI()` mangling of `+` in PostgREST filter strings.
 - **UNIQUE constraint dedup** — End-of-call report uses `INSERT ON CONFLICT DO NOTHING` via `vapi_call_id` uniqueness, replacing a fragile 10-second wait + search approach.
@@ -216,8 +207,7 @@ pytest tests/ -v
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `test_phone_normalize.py` | 6 | E.164 normalization edge cases |
-| `test_vapi_envelope.py` | 14 | Endpoint health + VAPI tool-call & EOC envelope parsing |
+| `test_vapi_envelope.py` | 10 | VAPI tool-call & EOC envelope parsing |
 
 ## Documentation
 

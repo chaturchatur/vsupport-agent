@@ -4,23 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Vsupport-agent** — VoiceAI insurance claims support agent. VAPI handles voice (Deepgram STT + GPT-4o + ElevenLabs TTS), n8n Cloud is the primary integration layer (all webhooks + Airtable CRUD), FastAPI is a thin utility layer (phone normalization only).
+**Vsupport-agent** — VoiceAI insurance claims support agent. VAPI handles voice (Deepgram STT + GPT-4o + ElevenLabs TTS), n8n Cloud is the primary integration layer (all webhooks + DB operations).
 
 ## Tech Stack
 
 - **Voice**: VAPI (telephony orchestration) → Deepgram Nova-2 (STT) → GPT-4o (LLM) → ElevenLabs (TTS)
-- **Workflows**: n8n Cloud — receives ALL VAPI webhooks, handles ALL Airtable reads/writes
-- **Backend**: Python + FastAPI — utility only (`/health`, `/normalize-phone`)
-- **Data**: Airtable (Customers table for reads, Interactions table for writes)
+- **Workflows**: n8n Cloud — receives ALL VAPI webhooks, handles ALL DB reads/writes
+- **Data**: Supabase PostgreSQL (customers, interactions, faqs with pgvector)
 - **CLI Tools**: `vapi` CLI, `pyairtable` CLI (wrapped via custom skills `/vapi` and `/airtable`)
 
 ## Commands
 
 ```bash
-# FastAPI
-uvicorn app.main:app --reload          # Run dev server
+# Tests
 pytest tests/                           # Run all tests
-pytest tests/test_phone_normalize.py    # Single test file
 
 # CLI tools
 vapi assistants list                    # List VAPI assistants

@@ -42,12 +42,7 @@ Layer 3: DATABASE (Supabase PostgreSQL)
   ├── faqs table (pgvector embeddings for RAG)
   └── Edge Functions for FAQ embedding + search
 
-Layer 4: UTILITY API (FastAPI — Python)
-  ├── /health endpoint
-  ├── /normalize-phone (E.164 normalization)
-  └── NOT in the main data path — utility only
-
-Layer 5: FAQ RAG (Supabase pgvector + Edge Functions)
+Layer 4: FAQ RAG (Supabase pgvector + Edge Functions)
   ├── 18 FAQ entries with gte-small embeddings (384 dims)
   ├── Semantic similarity search via pgvector
   └── VAPI Custom Knowledge Base integration
@@ -108,8 +103,8 @@ Layer 5: FAQ RAG (Supabase pgvector + Edge Functions)
 
 ## 4. Key Architectural Decisions & Why
 
-### Decision 1: n8n Cloud as primary integration layer (not FastAPI)
-**Why:** Visual workflow editing, built-in Supabase nodes, zero boilerplate for webhooks. FastAPI stays thin — only phone normalization.
+### Decision 1: n8n Cloud as primary integration layer (not a custom backend)
+**Why:** Visual workflow editing, built-in Supabase nodes, zero boilerplate for webhooks. No backend server to deploy or maintain.
 
 ### Decision 2: Airtable → Supabase migration
 **Why:** Airtable had 5 req/sec rate limit, no indexing, no unique constraints, 50k record cap. The end-of-call dedup was a hacky 10-second sleep + search. Supabase gives us proper indexes, `UNIQUE` constraints, `INSERT ON CONFLICT DO NOTHING` for atomic dedup.
@@ -347,7 +342,7 @@ Total perceived delay:          1.1-2.5 seconds per turn
 
 ## 9. Testing & Quality
 
-- **20 automated tests** (pytest): phone normalization (6), FastAPI endpoints (4), VAPI envelope parsing (10)
+- **10 automated tests** (pytest): VAPI envelope parsing (10)
 - **Demo scripts**: Happy path (approved claim), error paths (identity denial, re-verification, requires_documentation)
 - **Conversation state machine**: 17 states, color-coded diagram (green=happy, red=error, yellow=re-verification, purple=FAQ)
 - **Excalidraw diagrams**: Architecture diagram + conversation flow diagram (in `diagrams/`)
@@ -421,7 +416,7 @@ The `UNIQUE` constraint + `continueRegularOutput` is equivalent to `INSERT ON CO
 
 **Considered solutions:**
 - **Supabase IPv4 add-on** (~$4/mo) — adds a dedicated IPv4 address. Would work but adds cost for something that should be free.
-- **FastAPI as DB intermediary** — n8n → FastAPI (HTTP) → Supabase (supabase-py). Works but requires deploying FastAPI to a cloud host, adding a second service to manage.
+- **Custom backend as DB intermediary** — n8n → backend (HTTP) → Supabase. Works but requires deploying a separate server, adding a second service to manage.
 - **Supabase REST API** — n8n's built-in Supabase node connects via PostgREST (HTTPS, port 443). HTTPS resolves and routes correctly regardless of IPv4/IPv6.
 
 **Chosen solution:** Supabase node via REST API. Zero additional cost, zero additional infra. Trade-off: no raw SQL (PostgREST filters only), but for our simple CRUD operations this is actually a benefit (no SQL injection surface).
@@ -476,7 +471,7 @@ The LLM handles natural language date parsing better than any regex or `dateutil
 | `supabase/migrations/001-005` | Database schema evolution |
 | `supabase/functions/search-faq/` | FAQ RAG Edge Function |
 | `supabase/functions/generate-embedding/` | Auto-embed FAQ rows |
-| `app/main.py` | FastAPI utility layer |
+| `app/config.py` | Pydantic Settings (env vars) |
 | `scripts/deploy-vapi.sh` | Deployment script with placeholder resolution |
 | `diagrams/*.excalidraw` | Architecture + conversation flow diagrams |
 | `.agent/` | Living documentation (System, Decisions, Gotchas, Tasks) |
@@ -485,8 +480,8 @@ The LLM handles natural language date parsing better than any regex or `dateutil
 
 ## 12. Talking Points for Q&A
 
-**"Why not just build everything in FastAPI?"**
-→ n8n gives us visual debugging, built-in connectors, and zero-boilerplate webhook handling. FastAPI would mean writing and maintaining all the HTTP parsing, auth, DB queries, and error handling manually. n8n lets us iterate on workflows in minutes.
+**"Why not just build a custom backend?"**
+→ n8n gives us visual debugging, built-in connectors, and zero-boilerplate webhook handling. A custom backend would mean writing and maintaining all the HTTP parsing, auth, DB queries, and error handling manually. n8n lets us iterate on workflows in minutes.
 
 **"Why GPT-4o and not Claude?"**
 → VAPI natively supports both. GPT-4o was chosen for lower latency in real-time voice (critical for natural conversation). Could swap to Claude Sonnet for potentially better instruction following — the config is model-agnostic.

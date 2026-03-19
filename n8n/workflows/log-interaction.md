@@ -36,14 +36,16 @@ Arguments expected: `caller_name`, `phone_number`, `summary`, `sentiment` (all f
 
 ### b) Sanitize and default the fields
 
-| Field | Logic |
-|-------|-------|
-| `caller_name` | Trims whitespace, defaults to `"Unknown"` if missing |
-| `phone_number` | Trims whitespace, defaults to empty string |
-| `summary` | Trims whitespace, defaults to empty string |
-| `sentiment` | Validates against `['positive', 'neutral', 'negative']` — defaults to `'neutral'` if the LLM sends anything unexpected |
-| `timestamp` | Server-generated `new Date().toISOString()` — not from the LLM |
-| `vapi_call_id` | Extracted from `message.call.id` (the VAPI call object, not the tool call) |
+
+| Field          | Logic                                                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `caller_name`  | Trims whitespace, defaults to `"Unknown"` if missing                                                                   |
+| `phone_number` | Trims whitespace, defaults to empty string                                                                             |
+| `summary`      | Trims whitespace, defaults to empty string                                                                             |
+| `sentiment`    | Validates against `['positive', 'neutral', 'negative']` — defaults to `'neutral'` if the LLM sends anything unexpected |
+| `timestamp`    | Server-generated `new Date().toISOString()` — not from the LLM                                                         |
+| `vapi_call_id` | Extracted from `message.call.id` (the VAPI call object, not the tool call)                                             |
+
 
 **Output:** A single JSON object with exactly these 6 fields — maps 1:1 to the `interactions` table columns.
 
@@ -53,7 +55,7 @@ Arguments expected: `caller_name`, `phone_number`, `summary`, `sentiment` (all f
 
 - **Operation:** `create` on `interactions` table
 - **Data mapping:** `autoMapInputData` — the 6 fields from Parse Envelope are auto-mapped to table columns by name (no manual field mapping needed)
-- **`onError: continueErrorOutput`** — this is the critical setting. Instead of halting the workflow on failure, the node routes to its **second output** (error branch). Success goes to the first output. This creates the branching pipeline.
+- `**onError: continueErrorOutput`** — this is the critical setting. Instead of halting the workflow on failure, the node routes to its **second output** (error branch). Success goes to the first output. This creates the branching pipeline.
 - Connects via REST API (PostgREST over HTTPS), not the Postgres wire protocol
 - Uses the Supabase credential `Zhs4bVeCvuPXCQkF`
 
@@ -120,14 +122,16 @@ Sends the Format Error JSON back to VAPI. GPT-4o sees `success: false` and trigg
 
 ## How this differs from Lookup Caller
 
-| Aspect | Lookup Caller | Log Interaction |
-|--------|---------------|-----------------|
-| **Direction** | Read (getAll) | Write (create) |
-| **Pipeline shape** | Linear (5 nodes) | Branching (7 nodes — success/error split) |
-| **toolCallId routing** | Threaded through the pipeline | Retrieved from Webhook node at format time via `$('Webhook')` |
-| **Error handling** | No branching — errors surfaced in Format Result | `onError: continueErrorOutput` creates a dedicated error branch |
-| **Phone normalization** | JS E.164 normalization + PostgREST filter building | None — phone is stored as-is from GPT-4o |
-| **Dedup concern** | N/A (read-only) | UNIQUE constraint on `vapi_call_id` prevents duplicate logs |
+
+| Aspect                  | Lookup Caller                                      | Log Interaction                                                 |
+| ----------------------- | -------------------------------------------------- | --------------------------------------------------------------- |
+| **Direction**           | Read (getAll)                                      | Write (create)                                                  |
+| **Pipeline shape**      | Linear (5 nodes)                                   | Branching (7 nodes — success/error split)                       |
+| **toolCallId routing**  | Threaded through the pipeline                      | Retrieved from Webhook node at format time via `$('Webhook')`   |
+| **Error handling**      | No branching — errors surfaced in Format Result    | `onError: continueErrorOutput` creates a dedicated error branch |
+| **Phone normalization** | JS E.164 normalization + PostgREST filter building | None — phone is stored as-is from GPT-4o                        |
+| **Dedup concern**       | N/A (read-only)                                    | UNIQUE constraint on `vapi_call_id` prevents duplicate logs     |
+
 
 ---
 
@@ -142,6 +146,7 @@ They serve different purposes, fire at different times, and catch different scen
 **End-of-Call Report** is a VAPI platform event. VAPI sends it automatically for *every* call after hangup, regardless of how the call ended. It includes VAPI's own `analysisPlan` output (structured data like `callReason`, `authenticated`, `claimNumber`, `escalated`) — metadata the LLM-generated log doesn't have.
 
 Think of it as:
+
 - **Log Interaction** = the agent's own notes ("here's what I think happened")
 - **End-of-Call Report** = the platform's safety net ("here's what actually happened, with structured metadata")
 
@@ -159,7 +164,9 @@ Rather than adding manual field exclusion, the workflow uses n8n's `$('Webhook')
 
 The `interactions` table has a UNIQUE constraint on `vapi_call_id`. The first INSERT succeeds (→ Format Success → Respond Success). The second INSERT violates the constraint (→ Format Error → Respond Error). GPT-4o gets `success: false` but handles it gracefully — the caller never knows.
 
-This is the same dedup strategy used by the End-of-Call Report workflow, just with different error routing (`continueErrorOutput` here vs. `continueRegularOutput` there).
+
+
+ the same dedup strategy used by the End-of-Call Report workflow, just with different error routing (`continueErrorOutput` here vs. `continueRegularOutput` there).
 
 ### Why does Parse Envelope default sentiment to `'neutral'`?
 
@@ -175,14 +182,14 @@ Trust boundary. The n8n server's clock is authoritative — it reflects when the
 
 1. Caller says: "That's all I needed, thanks!"
 2. GPT-4o summarizes the conversation and issues:
-   ```
+  ```
    log_interaction({
      caller_name: "Sarah Johnson",
      phone_number: "415-555-1234",
      summary: "Caller checked status of claim CLM-2024-001, confirmed approved. No further action needed.",
      sentiment: "positive"
    })
-   ```
+  ```
 3. VAPI POSTs the tool-call envelope to n8n (includes `message.call.id` = the VAPI call UUID)
 4. Parse Envelope extracts the 4 args + generates `timestamp` + pulls `vapi_call_id` from `message.call.id`
 5. Insert Interaction writes to Supabase: `{ caller_name: "Sarah Johnson", phone_number: "415-555-1234", summary: "...", sentiment: "positive", timestamp: "2026-03-18T...", vapi_call_id: "abc-123-..." }`
@@ -190,3 +197,4 @@ Trust boundary. The n8n server's clock is authoritative — it reflects when the
 7. Format Success returns `{ results: [{ toolCallId: "call_xyz", result: '{"success":true,"record_id":"42"}' }] }`
 8. GPT-4o receives confirmation, says "Thank you for calling Observe Insurance. Have a wonderful day!"
 9. After the caller confirms goodbye, GPT-4o calls `endCall` to hang up
+

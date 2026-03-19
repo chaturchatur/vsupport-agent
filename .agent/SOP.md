@@ -14,13 +14,11 @@
 
 - **Run tests:** `python3 -m pytest tests/ -v -p no:playwright`
 - The `-p no:playwright` flag is required because a globally installed `pytest-playwright` plugin conflicts with this project's test runner.
-- All tests use `FastAPI.TestClient` via the shared `conftest.py` fixture.
 
 ## Coding Standards
 
-- **Phone numbers**: Always store and compare in E.164 format (e.g., `+14155551234`). Use `app/services/phone.py:normalize_phone()` for conversion.
+- **Phone numbers**: Always store and compare in E.164 format (e.g., `+14155551234`). Phone normalization for lookups is handled in n8n Code nodes (JS-based).
 - **Config**: All env vars loaded via `app/config.py` (Pydantic Settings). Never hardcode secrets.
-- **Schemas**: All request/response models in `app/schemas.py` as Pydantic models.
 
 ## VAPI Deployment
 

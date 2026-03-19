@@ -6,7 +6,8 @@
 
 Creates the two main tables, migrated from Airtable to eliminate its 5 req/sec rate limit:
 
-**`customers`** (read-only by the voice agent)
+`**customers**` (read-only by the voice agent)
+
 - `id` — auto-incrementing bigint primary key
 - `first_name`, `last_name`, `phone_number` (E.164 format like `+14155551234`)
 - `claim_number` — **UNIQUE** constraint, the primary business identifier
@@ -14,7 +15,8 @@ Creates the two main tables, migrated from Airtable to eliminate its 5 req/sec r
 - `claim_details` — free text (e.g. "Missing proof of loss form...")
 - **3 indexes** matching the voice agent's lookup patterns: phone number, `LOWER(last_name)`, `UPPER(claim_number)`
 
-**`interactions`** (write log for call events)
+`**interactions`** (write log for call events)
+
 - `caller_name`, `phone_number`, `summary`, `sentiment` (CHECK: positive/neutral/negative)
 - `vapi_call_id` — **UNIQUE** constraint. This is the key architectural fix: enables `INSERT ... ON CONFLICT DO NOTHING` for atomic dedup. If n8n's `log_interaction` tool and the end-of-call-report both fire for the same call, the second insert silently no-ops instead of creating a duplicate.
 - Indexed on `vapi_call_id` (for dedup lookups) and `timestamp DESC` (for recent-first queries)
@@ -51,11 +53,13 @@ Enables the `pgvector` extension (under the `extensions` schema, Supabase conven
 
 ### `005_faqs_table.sql` — FAQ Semantic Search
 
-Creates the **`faqs`** table:
+Creates the `**faqs**` table:
+
 - `question`, `answer`, `category` — the FAQ content
 - `embedding extensions.vector(384)` — a 384-dimensional vector column (matches `gte-small` model output dimension)
 
-Also creates the **`match_faqs`** RPC function:
+Also creates the `**match_faqs**` RPC function:
+
 - Takes a `query_embedding` vector and a `match_threshold` (default 0.8)
 - Uses the **inner product operator** `<#>` (negative inner product) — since gte-small embeddings are L2-normalized, inner product is equivalent to cosine similarity but faster
 - The `WHERE` clause uses `< -match_threshold` because `<#>` returns the *negative* inner product (so a threshold of 0.8 becomes -0.8)
@@ -82,6 +86,7 @@ Inserts 18 FAQ entries covering categories: `general`, `claims`, `billing`. Topi
 Supabase Edge Functions are **serverless TypeScript functions** that run on **Deno** (not Node.js) at the edge, deployed to Supabase's infrastructure. Think of them like AWS Lambda or Cloudflare Workers but tightly integrated with Supabase — they automatically get access to `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` env vars, and can use `Supabase.ai` for built-in ML inference without any external API calls.
 
 Key characteristics:
+
 - **Deno runtime** — imports use URL-based ESM (`https://esm.sh/...`), not `npm install`
 - **No cold start billing** — you pay per invocation, not per uptime
 - **Built-in Supabase AI** — `new Supabase.ai.Session("gte-small")` runs embedding models directly on Supabase infra, no OpenAI key needed
@@ -94,11 +99,11 @@ There are two trigger patterns used in this project:
 1. **Database Webhook** — Configured in the Supabase dashboard to fire on table events (INSERT, UPDATE, DELETE). Supabase POSTs the `{ record }` payload to the function URL automatically.
 2. **External HTTP call** — Any service (VAPI, n8n, your app) calls the function URL directly as a regular HTTP endpoint.
 
-### Why Edge Functions Instead of FastAPI?
+### Why Edge Functions?
 
-The FastAPI server in this project is a thin utility layer (`/health`, `/normalize-phone`). The edge functions handle the AI-heavy work because:
+The edge functions handle the AI-heavy work because:
 
-- **`Supabase.ai.Session`** runs gte-small on Supabase's own infra — zero latency to the database, no external embedding API needed
+- `**Supabase.ai.Session`** runs gte-small on Supabase's own infra — zero latency to the database, no external embedding API needed
 - **Direct database access** — the function and Postgres are in the same Supabase project, so RPC calls are fast
 - **No server to manage** — they scale automatically and you don't need to keep a process running
 
@@ -143,3 +148,4 @@ Caller phones in → VAPI → n8n → queries customers (phone_digits / last_nam
                                 → returns claim info
                                 → logs to interactions (dedup via vapi_call_id UNIQUE)
 ```
+

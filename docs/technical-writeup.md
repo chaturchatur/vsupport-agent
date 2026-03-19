@@ -15,7 +15,7 @@ The system is a 5-layer stack where each layer handles a single concern:
 | **Workflow Engine** | n8n Cloud | 3 webhook-triggered workflows for all database I/O |
 | **Database** | Supabase PostgreSQL | Customers (read), Interactions (write), FAQs (pgvector RAG) |
 | **Edge Functions** | Supabase Deno Runtime | FAQ embedding generation (gte-small) + semantic search |
-| **Utility API** | FastAPI (Python) | Phone normalization only — not in the main data path |
+| **Config** | Python + Pydantic Settings | Environment configuration |
 
 ### Why These Specific Tools
 
@@ -31,8 +31,8 @@ GPT-4o provides the best latency-to-quality ratio for real-time voice. Temperatu
 **ElevenLabs for TTS:**
 The pre-built "Sarah" voice is warm and professional without sounding robotic. ElevenLabs' streaming latency (200-400ms) keeps the total turn latency under 2.5 seconds, which is the threshold where callers start feeling the delay.
 
-**n8n Cloud as the integration layer (not FastAPI):**
-This was a deliberate architectural choice. n8n gives us visual workflow debugging, built-in Supabase/HTTP nodes, and webhook endpoints with zero boilerplate. Building the same 3 workflows in FastAPI would mean writing HTTP parsing, auth middleware, database queries, error branching, and response formatting manually — all of which n8n handles declaratively. The visual representation also makes the system auditable by non-engineers (product, compliance).
+**n8n Cloud as the integration layer (not a custom backend):**
+This was a deliberate architectural choice. n8n gives us visual workflow debugging, built-in Supabase/HTTP nodes, and webhook endpoints with zero boilerplate. Building the same 3 workflows in a custom backend would mean writing HTTP parsing, auth middleware, database queries, error branching, and response formatting manually — all of which n8n handles declaratively. The visual representation also makes the system auditable by non-engineers (product, compliance).
 
 **Supabase over Airtable/Google Sheets:**
 The original prototype used Airtable, but we migrated to Supabase to solve three critical problems:

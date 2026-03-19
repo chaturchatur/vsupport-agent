@@ -4,7 +4,7 @@
 
 ## Context
 
-Build a voice-enabled AI agent that handles inbound insurance claim support calls for "Observe Insurance." Deliverables: working VAPI voice agent, n8n workflows, FastAPI utility layer, Airtable integrations (read + write), demo recordings (happy + error paths), conversation flow + architecture diagrams, and a technical write-up.
+Build a voice-enabled AI agent that handles inbound insurance claim support calls for "Observe Insurance." Deliverables: working VAPI voice agent, n8n workflows, Supabase database, demo recordings (happy + error paths), conversation flow + architecture diagrams, and a technical write-up.
 
 ## Tech Stack
 
@@ -13,11 +13,10 @@ Build a voice-enabled AI agent that handles inbound insurance claim support call
 - **LLM**: GPT-4o (via VAPI)
 - **TTS**: ElevenLabs (via VAPI)
 - **Workflow Engine**: n8n Cloud — primary integration layer (all VAPI webhooks + Airtable CRUD)
-- **Backend**: Python + FastAPI — utility layer (phone normalization, health endpoint)
-- **Data Store**: Airtable (Customers table + Interactions table)
+- **Data Store**: Supabase PostgreSQL (customers + interactions + faqs with pgvector)
 - **CLI Tools**: VAPI CLI, pyairtable CLI (with custom Claude Code skills `/vapi` and `/airtable`)
 - **Diagrams**: Excalidraw (via excalidraw-diagram skill)
-- **Hosting**: n8n Cloud (Starter plan); FastAPI local + ngrok or AWS Lambda
+- **Hosting**: n8n Cloud (Starter plan); Supabase (managed)
 
 ---
 
@@ -41,13 +40,7 @@ Build a voice-enabled AI agent that handles inbound insurance claim support call
 - [x] **Step 1: File structure** — Create project scaffolding:
   ```
   app/
-  ├── __init__.py
-  ├── main.py              # FastAPI app: /health, /normalize-phone, CORS
-  ├── config.py            # Pydantic Settings (env vars)
-  ├── schemas.py           # Request/response Pydantic models
-  └── services/
-      ├── __init__.py
-      └── phone.py         # Phone normalization utility (phonenumbers lib)
+  └── config.py            # Pydantic Settings (env vars)
   vapi/
   ├── assistant_config.json  # VAPI assistant definition
   └── system_prompt.md       # GPT-4o system prompt (version-controlled)
@@ -67,7 +60,7 @@ Build a voice-enabled AI agent that handles inbound insurance claim support call
   ├── conversation-flow.excalidraw
   └── architecture.excalidraw
   ```
-- [x] **Step 2: Dependencies** — `requirements.txt`: fastapi, uvicorn, phonenumbers, pydantic-settings, httpx, pytest. `.env.example` with all required env vars.
+- [x] **Step 2: Dependencies** — `requirements.txt`: pydantic-settings, httpx, pytest. `.env.example` with all required env vars.
 
 **Status:** Phase 1 complete.
 
@@ -101,16 +94,6 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 
 ---
 
-## Phase 4: FastAPI Utility Layer
-
-- [x] **Step 6: Phone normalization service** (`app/services/phone.py`) — `normalize_phone(raw, default_region="US")` using `phonenumbers` lib, E.164 output
-- [x] **Step 7: Schemas** (`app/schemas.py`) — `NormalizePhoneRequest` / `NormalizePhoneResponse`
-- [x] **Step 8: App** (`app/main.py`) — `GET /health`, `POST /normalize-phone`, CORS middleware
-
-**Status:** Phase 4 complete.
-
----
-
 ## Phase 5: VAPI Agent Configuration
 
 - [x] **Step 9: System prompt** (`vapi/system_prompt.md`) — Full conversational flow: greeting, authentication, re-verification (last_name → claim_number), claim status handling, FAQ knowledge base, escalation, wrap-up + logging, sentiment rules, error handling
@@ -124,7 +107,7 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 ## Phase 6: Diagrams
 
 - [x] **Step 11: Conversation state machine diagram** — `diagrams/conversation-flow.excalidraw` (states, transitions, color-coded: green=happy, red=error, yellow=re-verification)
-- [x] **Step 12: System architecture diagram** — `diagrams/architecture.excalidraw` (VAPI, n8n, FastAPI, Airtable, monitoring touchpoints)
+- [x] **Step 12: System architecture diagram** — `diagrams/architecture.excalidraw` (VAPI, n8n, Supabase, monitoring touchpoints)
 
 **Status:** Phase 6 complete.
 
@@ -132,8 +115,8 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 
 ## Phase 7: Tests, Deployment & Demos
 
-- [x] **Step 13: Tests** — 20 tests passing: 6 phone normalization unit tests, 4 FastAPI endpoint tests, 6 VAPI tool-call envelope tests, 4 end-of-call-report envelope tests. `pytest tests/ -p no:playwright`
-- [x] **Step 14: Deployment** — n8n Cloud (already deployed), deploy script (`scripts/deploy-vapi.sh`) resolves placeholders and creates/updates VAPI assistant via REST API. Assistant ID: `2d8ea99b-1187-4a24-a710-28e1a96af9ee`. FastAPI runs locally (`uvicorn app.main:app --reload`). Phone number not yet provisioned.
+- [x] **Step 13: Tests** — 10 tests passing: 6 VAPI tool-call envelope tests, 4 end-of-call-report envelope tests. `pytest tests/ -p no:playwright`
+- [x] **Step 14: Deployment** — n8n Cloud (already deployed), deploy script (`scripts/deploy-vapi.sh`) resolves placeholders and creates/updates VAPI assistant via REST API. Assistant ID: `2d8ea99b-1187-4a24-a710-28e1a96af9ee`. Phone number not yet provisioned.
 - [x] **Step 15: Demo scripts** — 3 demo scenarios documented: happy path (approved claim), error paths (identity denial + re-verification with multi-match, phone not found + abrupt hangup, requires documentation flow)
 
 **Status:** Phase 7 complete.
@@ -162,7 +145,7 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 
 ## Phase 9: Technical Write-Up
 
-- [x] Architecture choices (why VAPI, n8n, GPT-4o, Supabase, FastAPI) — `docs/interview-briefing.md` Section 4
+- [x] Architecture choices (why VAPI, n8n, GPT-4o, Supabase) — `docs/interview-briefing.md` Section 4
 - [x] Production scaling considerations (component limits, latency budget, scaling phases A-D) — Section 7
 - [x] Per-call cost estimate (~$0.24/call, volume scaling table, break-even analysis) — Section 6
 - [x] HIPAA considerations (BAA-eligible mode, production gaps, data flow audit) — Section 5
@@ -183,7 +166,6 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 - [ ] n8n Workflow 2 — log-interaction with vapi_call_id
 - [ ] n8n Workflow 3 — end-of-call-report dedup (skip if already logged)
 - [ ] n8n error branches — simulate Airtable timeout
-- [ ] FastAPI — health check 200, /normalize-phone with default_region=US
 - [ ] `pytest tests/` — all pass
 - [ ] Call test — happy path (verify Airtable log + claim_number in response)
 - [ ] Call test — identity denial (re-verification + multi-match + log)
