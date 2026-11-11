@@ -246,10 +246,10 @@ pytest tests/ -v
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
 | `test_vapi_envelope.py` | 10 | VAPI tool-call & EOC envelope parsing |
-| `test_post_call_outcomes.py` | TBD_OUT | Analysis schema, outcome mapping with missing fields, outcome merge, migration 007 |
-| `test_follow_up_routing.py` | TBD_FUP | Escalation / SMS / callback conditions, SMS guard rails, failure isolation |
-| `test_pre_call_context.py` | TBD_PRE | `assistant-request` envelope, known / unknown / error responses, prompt variables |
-| `test_deploy_and_dashboard.py` | TBD_DEP | Deploy-time placeholder resolution, Grafana dashboard structure |
+| `test_post_call_outcomes.py` | 21 | Analysis schema, outcome mapping with missing fields, outcome merge, migration 007 |
+| `test_follow_up_routing.py` | 39 | Escalation / SMS / callback conditions, SMS guard rails, failure isolation |
+| `test_pre_call_context.py` | 38 | `assistant-request` envelope, known / unknown / error responses, prompt variables |
+| `test_deploy_and_dashboard.py` | 20 | Deploy-time placeholder resolution, Grafana dashboard structure |
 
 ## Documentation
 
