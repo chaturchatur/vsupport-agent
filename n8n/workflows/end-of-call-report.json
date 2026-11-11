@@ -8,14 +8,17 @@
         "httpMethod": "POST",
         "path": "vapi-server",
         "authentication": "headerAuth",
-        "responseMode": "lastNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "webhook-eoc",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "vapi-server",
       "credentials": {
         "httpHeaderAuth": {
@@ -26,13 +29,16 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\nconst message = body.message;\nconst messageType = message.type || '';\nif (messageType !== 'end-of-call-report') {\n  return [{ json: { is_eoc: false } }];\n}\n\nconst vapiCallId = message.call?.id || '';\nconst summary = message.analysis?.summary || message.artifact?.messages?.map(m => m.content || '').join(' ').substring(0, 500) || 'No summary available';\nconst sentiment = message.analysis?.structuredData?.sentiment || 'neutral';\nconst callerPhone = message.call?.customer?.number || '';\nconst callerName = message.analysis?.structuredData?.callerName || 'Unknown';\nconst validSentiments = ['positive', 'neutral', 'negative'];\n\nreturn [{\n  json: {\n    is_eoc: true,\n    caller_name: callerName,\n    phone_number: callerPhone,\n    summary: summary,\n    sentiment: validSentiments.includes(sentiment) ? sentiment : 'neutral',\n    timestamp: new Date().toISOString(),\n    vapi_call_id: vapiCallId\n  }\n}];"
+        "jsCode": "const body = $input.first().json.body || {};\nconst message = body.message || {};\nconst messageType = message.type || '';\nif (messageType !== 'end-of-call-report') {\n  return [{ json: { is_eoc: false } }];\n}\n\nconst call = message.call || {};\nconst sd = message.analysis?.structuredData || {};\n\n// --- existing fields (unchanged behaviour) ---\nconst vapiCallId = call.id || '';\nconst summary = message.analysis?.summary || message.artifact?.messages?.map(m => m.content || '').join(' ').substring(0, 500) || 'No summary available';\nconst sentiment = sd.sentiment || 'neutral';\nconst callerPhone = call.customer?.number || '';\nconst callerName = sd.callerName || 'Unknown';\nconst validSentiments = ['positive', 'neutral', 'negative'];\n\n// --- outcome fields: every one defaults to null when VAPI omits it ---\n// null = \"not scored\". Never default a missing boolean to false: that would\n// count an unanalysed call as \"not contained\" / \"not escalated\".\nconst toBool = (v) => (v === true || v === 'true') ? true : (v === false || v === 'false') ? false : null;\nconst toText = (v, max) => (typeof v === 'string' && v.trim()) ? v.trim().substring(0, max) : null;\nconst firstBool = (...vals) => { for (const v of vals) { const b = toBool(v); if (b !== null) return b; } return null; };\n\nconst validStatuses = ['approved', 'pending', 'requires_documentation', 'not_found'];\nconst claimStatus = validStatuses.includes(sd.claimStatus) ? sd.claimStatus : null;\n\n// Claim numbers end up in a PostgREST filter later, so only allow a strict charset.\nconst rawClaim = toText(sd.claimNumber, 40);\nconst claimNumber = (rawClaim && /^[A-Za-z0-9-]{3,40}$/.test(rawClaim)) ? rawClaim.toUpperCase() : null;\n\n// Duration: VAPI's own number if present, else derive it from the timestamps.\nlet duration = Number(message.durationSeconds ?? call.durationSeconds);\nif (!Number.isFinite(duration)) {\n  const started = Date.parse(message.startedAt || call.startedAt || '');\n  const ended = Date.parse(message.endedAt || call.endedAt || '');\n  duration = (Number.isFinite(started) && Number.isFinite(ended)) ? (ended - started) / 1000 : NaN;\n}\nconst durationSeconds = (Number.isFinite(duration) && duration >= 0) ? Math.round(duration) : null;\n\n// Caller ID digits (11 digits for US numbers), used by pre-call-context to find\n// \"this caller's last call\". Same normalisation rules as lookup-caller.\nlet callerDigits = String(callerPhone || message.customer?.number || '').replace(/\\D/g, '');\nif (callerDigits.length === 10) callerDigits = '1' + callerDigits;\nif (callerDigits.length < 10) callerDigits = '';\n\nreturn [{\n  json: {\n    is_eoc: true,\n    caller_name: callerName,\n    phone_number: callerPhone,\n    summary: summary,\n    sentiment: validSentiments.includes(sentiment) ? sentiment : 'neutral',\n    timestamp: new Date().toISOString(),\n    vapi_call_id: vapiCallId,\n    call_reason: toText(sd.callReason, 200),\n    authenticated: toBool(sd.authenticated),\n    claim_number: claimNumber,\n    claim_status: claimStatus,\n    resolved_without_human: toBool(sd.resolvedWithoutHuman),\n    // Older analyses only have 'escalated' / 'callbackPromised': use them as fallbacks.\n    escalation_requested: firstBool(sd.escalationRequested, sd.escalated),\n    follow_up_needed: firstBool(sd.followUpNeeded, sd.callbackPromised),\n    follow_up_reason: toText(sd.followUpReason, 300),\n    duration_seconds: durationSeconds,\n    ended_reason: toText(message.endedReason || call.endedReason, 100),\n    caller_phone_digits: callerDigits || null\n  }\n}];"
       },
       "id": "parse-eoc",
       "name": "Parse EOC Envelope",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
@@ -61,7 +67,10 @@
       "name": "Is EOC?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [440, 0]
+      "position": [
+        440,
+        0
+      ]
     },
     {
       "parameters": {
@@ -71,7 +80,10 @@
       "name": "Strip Meta",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, -60]
+      "position": [
+        660,
+        -60
+      ]
     },
     {
       "parameters": {
@@ -83,9 +95,354 @@
       "name": "Upsert Interaction",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [880, -60],
+      "position": [
+        880,
+        -60
+      ],
       "alwaysOutputData": true,
       "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The create above is rejected when log_interaction already wrote this call's row\n// (UNIQUE vapi_call_id). That row has no outcome data, so patch the outcome\n// columns onto it. Summary / sentiment / caller_name written by the LLM are kept.\nconst parsed = $('Strip Meta').first().json;\nif (!parsed.vapi_call_id) return [];   // no call id: nothing safe to match on\n\nconst OUTCOME_KEYS = [\n  'call_reason', 'authenticated', 'claim_number', 'claim_status',\n  'resolved_without_human', 'escalation_requested', 'follow_up_needed',\n  'follow_up_reason', 'duration_seconds', 'ended_reason', 'caller_phone_digits'\n];\nconst patch = { vapi_call_id: parsed.vapi_call_id };\nfor (const k of OUTCOME_KEYS) patch[k] = parsed[k] ?? null;\nreturn [{ json: patch }];"
+      },
+      "id": "build-patch",
+      "name": "Build Outcome Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "interactions",
+        "filterType": "string",
+        "filterString": "=vapi_call_id=eq.{{ $json.vapi_call_id }}",
+        "dataToSend": "autoMapInputData"
+      },
+      "id": "sb-merge",
+      "name": "Merge Outcomes",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -60
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deploy-time settings. scripts/deploy-n8n.sh replaces these placeholders from .env;\n// an unresolved or empty value means \"not configured\" and the action is skipped.\nconst ALERT_EMAIL_TO = '__ALERT_EMAIL_TO__';\nconst ALERT_EMAIL_FROM = '__ALERT_EMAIL_FROM__';\nconst TWILIO_FROM_NUMBER = '__TWILIO_FROM_NUMBER__';\nconst SMTP_CREDENTIAL_ID = '__N8N_SMTP_CREDENTIAL_ID__';\nconst TWILIO_CREDENTIAL_ID = '__N8N_TWILIO_CREDENTIAL_ID__';\nconst configured = (v) => typeof v === 'string' && v.trim() !== '' && !v.startsWith('__');\n\nconst parsed = $('Strip Meta').first().json;\n// Merge Outcomes returns the stored row. Prefer it: on the happy path its sentiment\n// is the one the LLM logged during the call. Fall back to what we parsed if the\n// update failed (for example migration 007 not applied yet).\nconst stored = $input.all().map(i => i.json)\n  .find(r => r && r.id && r.vapi_call_id === parsed.vapi_call_id) || {};\nconst pick = (k) => (stored[k] !== undefined && stored[k] !== null) ? stored[k] : parsed[k];\n\nconst escalationRequested = pick('escalation_requested') === true;\nconst negative = stored.sentiment === 'negative' || parsed.sentiment === 'negative';\nconst followUpNeeded = pick('follow_up_needed') === true;\nconst resolved = pick('resolved_without_human') === true;\nconst authenticated = pick('authenticated') === true;\nconst followUpReason = pick('follow_up_reason') || '';\nconst claim = String(pick('claim_number') || '').toUpperCase();\nconst claimOk = /^[A-Z0-9-]{3,40}$/.test(claim);\n\nconst doEscalation = escalationRequested || negative;\nconst triggers = [];\nif (escalationRequested) triggers.push('caller asked for a human');\nif (negative) triggers.push('negative sentiment');\n\nconst twilioConfigured = configured(TWILIO_FROM_NUMBER) && configured(TWILIO_CREDENTIAL_ID);\nconst alertConfigured = configured(ALERT_EMAIL_TO) && configured(ALERT_EMAIL_FROM) && configured(SMTP_CREDENTIAL_ID);\n\nreturn [{\n  json: {\n    vapi_call_id: parsed.vapi_call_id,\n    do_escalation: doEscalation,\n    escalation_trigger: triggers.join(' + '),\n    escalation_reason: doEscalation ? (followUpReason || triggers.join(' + ')) : '',\n    send_alert: doEscalation && alertConfigured,\n    alert_email_to: alertConfigured ? ALERT_EMAIL_TO : '',\n    alert_email_from: alertConfigured ? ALERT_EMAIL_FROM : '',\n    do_sms: resolved && authenticated && claimOk && twilioConfigured,\n    sms_from: twilioConfigured ? TWILIO_FROM_NUMBER : '',\n    claim_number: claimOk ? claim : '',\n    do_callback: followUpNeeded,\n    callback_reason: followUpNeeded ? (followUpReason || 'Follow-up needed (no reason captured)') : ''\n  }\n}];"
+      },
+      "id": "decide",
+      "name": "Decide Actions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -60
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "r-esc",
+                    "leftValue": "={{ $json.do_escalation }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "escalation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "r-sms",
+                    "leftValue": "={{ $json.do_sms }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "sms"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "r-cb",
+                    "leftValue": "={{ $json.do_callback }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "callback"
+            }
+          ]
+        },
+        "options": {
+          "allMatchingOutputs": true
+        }
+      },
+      "id": "route",
+      "name": "Route Actions",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1760,
+        -60
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Decide Actions').first().json;\nreturn [{ json: { vapi_call_id: d.vapi_call_id, kind: 'escalation', reason: d.escalation_reason } }];"
+      },
+      "id": "esc-row",
+      "name": "Build Escalation Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        -260
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "follow_ups",
+        "dataToSend": "autoMapInputData"
+      },
+      "id": "sb-esc",
+      "name": "Insert Escalation Follow-up",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        -260
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "alert-check",
+              "leftValue": "={{ $('Decide Actions').first().json.send_alert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-alert",
+      "name": "Alert Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        -260
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Decide Actions').first().json.alert_email_from }}",
+        "toEmail": "={{ $('Decide Actions').first().json.alert_email_to }}",
+        "subject": "=[Observe Insurance] Call needs a human: {{ $('Decide Actions').first().json.escalation_trigger }}",
+        "emailFormat": "text",
+        "text": "=A call ended and needs human follow-up.\n\nTrigger: {{ $('Decide Actions').first().json.escalation_trigger }}\nVAPI call id: {{ $('Decide Actions').first().json.vapi_call_id }}\n\nDetails are in the follow_ups and interactions tables (look up the call id). Caller details are deliberately left out of this email.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "email-alert",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2640,
+        -280
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "smtp": {
+          "id": "__N8N_SMTP_CREDENTIAL_ID__",
+          "name": "Alert SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "customers",
+        "returnAll": false,
+        "limit": 2,
+        "filterType": "string",
+        "filterString": "=claim_number=ilike.{{ $json.claim_number }}"
+      },
+      "id": "sb-cust",
+      "name": "Find Customer",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        -60
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The SMS goes ONLY to the phone number stored on the customers row for this claim.\n// Never to the caller ID, never to a number the caller said on the call.\nconst d = $('Decide Actions').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\nif (rows.length !== 1) return [];                       // no row, or ambiguous\nconst r = rows[0];\nif (String(r.claim_number || '').toUpperCase() !== d.claim_number) return [];\nif (!/^\\+[1-9]\\d{9,14}$/.test(r.phone_number || '')) return [];   // must be E.164\nif (!d.sms_from) return [];\n\n// Status comes from the database row, not from what the LLM thinks it said.\nconst lines = {\n  approved: 'has been approved.',\n  pending: 'is under review. We will let you know when there is an update.',\n  requires_documentation: 'needs additional documentation before we can proceed. Please call us if you need the list of documents.'\n};\nconst line = lines[r.claim_status];\nif (!line) return [];\n\nreturn [{\n  json: {\n    to: r.phone_number,\n    from: d.sms_from,\n    body: 'Observe Insurance: your claim ' + r.claim_number + ' ' + line + ' This number is not monitored.',\n    vapi_call_id: d.vapi_call_id\n  }\n}];"
+      },
+      "id": "build-sms",
+      "name": "Build SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        -60
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "sms",
+        "operation": "send",
+        "from": "={{ $json.from }}",
+        "to": "={{ $json.to }}",
+        "toWhatsapp": false,
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "twilio-sms",
+      "name": "Send Claim SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        -60
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "twilioApi": {
+          "id": "__N8N_TWILIO_CREDENTIAL_ID__",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Decide Actions').first().json;\nreturn [{ json: { vapi_call_id: d.vapi_call_id, kind: 'callback', reason: d.callback_reason } }];"
+      },
+      "id": "cb-row",
+      "name": "Build Callback Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        140
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "follow_ups",
+        "dataToSend": "autoMapInputData"
+      },
+      "id": "sb-cb",
+      "name": "Insert Callback Follow-up",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        140
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
           "id": "Zhs4bVeCvuPXCQkF",
@@ -96,19 +453,185 @@
   ],
   "connections": {
     "Webhook": {
-      "main": [[{"node": "Parse EOC Envelope", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Parse EOC Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse EOC Envelope": {
-      "main": [[{"node": "Is EOC?", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Is EOC?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Is EOC?": {
       "main": [
-        [{"node": "Strip Meta", "type": "main", "index": 0}],
+        [
+          {
+            "node": "Strip Meta",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
     "Strip Meta": {
-      "main": [[{"node": "Upsert Interaction", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Upsert Interaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Interaction": {
+      "main": [
+        [
+          {
+            "node": "Build Outcome Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Outcome Patch": {
+      "main": [
+        [
+          {
+            "node": "Merge Outcomes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Outcomes": {
+      "main": [
+        [
+          {
+            "node": "Decide Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Actions": {
+      "main": [
+        [
+          {
+            "node": "Route Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Actions": {
+      "main": [
+        [
+          {
+            "node": "Build Escalation Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find Customer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Callback Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Escalation Row": {
+      "main": [
+        [
+          {
+            "node": "Insert Escalation Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Escalation Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Alert Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Find Customer": {
+      "main": [
+        [
+          {
+            "node": "Build SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SMS": {
+      "main": [
+        [
+          {
+            "node": "Send Claim SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Callback Row": {
+      "main": [
+        [
+          {
+            "node": "Insert Callback Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
