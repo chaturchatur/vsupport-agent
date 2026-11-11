@@ -145,7 +145,7 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 
 ## Phase 9: Technical Write-Up
 
-- [x] Architecture choices (why VAPI, n8n, GPT-4o, Supabase) — `docs/interview-briefing.md` Section 4
+- [x] Architecture choices (why VAPI, n8n, GPT-4o, Supabase) — `docs/technical-writeup.md` Section 4
 - [x] Production scaling considerations (component limits, latency budget, scaling phases A-D) — Section 7
 - [x] Per-call cost estimate (~$0.24/call, volume scaling table, break-even analysis) — Section 6
 - [x] HIPAA considerations (BAA-eligible mode, production gaps, data flow audit) — Section 5
@@ -153,7 +153,7 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 - [x] What I'd optimize (immediate wins, medium-term, longer-term roadmap) — Section 8
 - [x] Data & metrics evaluation (testing suite, demo scripts, quality assurance) — Section 9
 
-**Status:** Phase 9 complete. Full briefing at `docs/interview-briefing.md`.
+**Status:** Phase 9 complete. Full briefing at `docs/technical-writeup.md`.
 
 ---
 

@@ -68,7 +68,7 @@ Vsupport-agent/
 ├── data/faqs.json                # FAQ source data (18 entries)
 ├── tests/                        # 10 tests (VAPI envelope parsing)
 ├── docs/
-│   └── interview-briefing.md     # Technical write-up (architecture, costs, HIPAA)
+│   └── technical-writeup.md      # Technical write-up (architecture, costs, HIPAA)
 └── requirements.txt
 ```
 
@@ -197,7 +197,7 @@ Three workflows running on n8n Cloud, all authenticated via `X-Vapi-Secret` head
 | Supabase | $0.001 |
 | **Total** | **~$0.24** |
 
-See `docs/interview-briefing.md` for volume scaling analysis and production considerations.
+See `docs/technical-writeup.md` for volume scaling analysis and production considerations.
 
 ## Testing
 
@@ -211,6 +211,6 @@ pytest tests/ -v
 
 ## Documentation
 
-- `docs/interview-briefing.md` — Full technical write-up (architecture, HIPAA, costs, scaling, war stories)
+- `docs/technical-writeup.md` — Full technical write-up (architecture, HIPAA, costs, scaling, war stories)
 - `vapi/system_prompt.md` — Complete conversational system prompt
 - `.agent/` — Living project documentation (architecture, SOPs, decisions, gotchas)
