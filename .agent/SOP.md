@@ -1,6 +1,6 @@
 # Standard Operating Procedures
 
-> Last verified: 2026-03-17
+> Last verified: 2026-11-11
 
 ## Documentation Workflow
 
@@ -14,6 +14,8 @@
 
 - **Run tests:** `python3 -m pytest tests/ -v -p no:playwright`
 - The `-p no:playwright` flag is required because a globally installed `pytest-playwright` plugin conflicts with this project's test runner.
+- **Node.js is required** for the workflow tests: `tests/n8n_harness.py` runs the `jsCode` of n8n Code nodes straight from `n8n/workflows/*.json`. Test the real node code this way; do not re-implement workflow logic in Python.
+- New logic in a workflow goes in a **Code node** (testable), not in IF/Switch expressions. Switch/IF nodes should only read booleans a Code node computed.
 
 ## Coding Standards
 
@@ -36,6 +38,16 @@
 - All workflows created/managed via n8n REST API (`N8N_API_KEY`).
 - Workflow JSON exports stored in `n8n/workflows/` for version control.
 - Webhook auth uses Header Auth credential (`x-vapi-secret` header).
+- Deploy with `./scripts/deploy-n8n.sh [workflow-name]`. It resolves `__PLACEHOLDER__` values from `.env` (`scripts/resolve_n8n_placeholders.py`) and creates the workflow if its export has no `id` yet.
+- Never commit environment-specific values (recipient addresses, sender numbers, credential ids for optional services, project URLs) in a workflow export. Add a placeholder and a key in `.env.example`.
+- Any node that runs after the data is safely stored (alerts, SMS, follow-ups) gets `onError: continueRegularOutput`.
+- Every workflow `.json` has a matching `.md` explaining each node (a test enforces this).
+
+## Pre-call recognition (assistant-request)
+
+- Order: apply migrations → deploy `pre-call-context` → test the webhook with curl → only then `./scripts/configure-vapi-phone.sh enable`.
+- Rollback at any time: `./scripts/configure-vapi-phone.sh disable` (assigns the assistant straight to the number again).
+- Caller ID is context, never authentication. Nothing but the first name may be spoken before DOB verification.
 
 ---
 

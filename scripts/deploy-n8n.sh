@@ -3,6 +3,10 @@
 # Usage: ./scripts/deploy-n8n.sh [workflow-name]
 #   ./scripts/deploy-n8n.sh                  # deploy all
 #   ./scripts/deploy-n8n.sh log-interaction   # deploy one
+#
+# Workflow exports may contain __PLACEHOLDER__ values (alert recipient, Twilio
+# sender, assistant id, ...). They are filled in from .env at deploy time by
+# scripts/resolve_n8n_placeholders.py, so nothing environment-specific is committed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -34,41 +38,48 @@ deploy_workflow() {
     local name
     name=$(basename "$json_file" .json)
     local workflow_id
-    workflow_id=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['id'])" "$json_file")
+    workflow_id=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('id') or '')" "$json_file")
 
-    echo "Deploying: $name (ID: $workflow_id)"
-
-    # Strip read-only fields before sending (API rejects them)
+    # Resolve __PLACEHOLDER__ values from .env and strip read-only fields
+    # (the API rejects them). Fails if a required value is missing.
     local payload
-    payload=$(python3 -c "
-import json,sys
-d=json.load(open(sys.argv[1]))
-for k in ['id','active','createdAt','updatedAt','versionId']:
-    d.pop(k,None)
-print(json.dumps(d))
-" "$json_file")
-
-    # PUT the workflow JSON
-    local http_code
-    http_code=$(curl -s -o /tmp/n8n_deploy_response.json -w "%{http_code}" \
-        -X PUT "$N8N_API_BASE/workflows/$workflow_id" \
-        -H "X-N8N-API-KEY: $N8N_API_KEY" \
-        -H "Content-Type: application/json" \
-        -d "$payload")
-
-    if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-        echo "  Updated successfully (HTTP $http_code)"
-    else
-        echo "  FAILED (HTTP $http_code)"
-        cat /tmp/n8n_deploy_response.json
-        echo ""
+    if ! payload=$(python3 "$SCRIPT_DIR/resolve_n8n_placeholders.py" "$json_file"); then
+        echo "  FAILED: could not resolve placeholders for $name"
         return 1
     fi
 
+    local http_code
+    if [ -z "$workflow_id" ]; then
+        # No id in the export yet: first deploy of a new workflow -> create it.
+        echo "Creating: $name (no workflow id in $json_file yet)"
+        http_code=$(curl -s -o /tmp/n8n_deploy_response.json -w "%{http_code}"             -X POST "$N8N_API_BASE/workflows"             -H "X-N8N-API-KEY: $N8N_API_KEY"             -H "Content-Type: application/json"             -d "$payload")
+        if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            workflow_id=$(python3 -c "import json; print(json.load(open('/tmp/n8n_deploy_response.json'))['id'])")
+            echo "  Created (HTTP $http_code) with ID: $workflow_id"
+            echo "  ACTION: set \"id\": \"$workflow_id\" at the top of $json_file and commit it,"
+            echo "          otherwise the next deploy creates a second copy."
+        else
+            echo "  FAILED (HTTP $http_code)"
+            cat /tmp/n8n_deploy_response.json
+            echo ""
+            return 1
+        fi
+    else
+        echo "Deploying: $name (ID: $workflow_id)"
+        http_code=$(curl -s -o /tmp/n8n_deploy_response.json -w "%{http_code}"             -X PUT "$N8N_API_BASE/workflows/$workflow_id"             -H "X-N8N-API-KEY: $N8N_API_KEY"             -H "Content-Type: application/json"             -d "$payload")
+
+        if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "  Updated successfully (HTTP $http_code)"
+        else
+            echo "  FAILED (HTTP $http_code)"
+            cat /tmp/n8n_deploy_response.json
+            echo ""
+            return 1
+        fi
+    fi
+
     # Activate the workflow
-    http_code=$(curl -s -o /tmp/n8n_deploy_response.json -w "%{http_code}" \
-        -X POST "$N8N_API_BASE/workflows/$workflow_id/activate" \
-        -H "X-N8N-API-KEY: $N8N_API_KEY")
+    http_code=$(curl -s -o /tmp/n8n_deploy_response.json -w "%{http_code}"         -X POST "$N8N_API_BASE/workflows/$workflow_id/activate"         -H "X-N8N-API-KEY: $N8N_API_KEY")
 
     if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
         echo "  Activated"

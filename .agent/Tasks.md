@@ -157,6 +157,47 @@ All n8n workflows created programmatically via the **n8n REST API** (`N8N_API_KE
 
 ---
 
+## Phase 10: Pre-call and post-call workflows (branch `feature/pre-post-call-workflows`)
+
+Written and unit-tested. **Nothing in this phase has been deployed or tried on a live call.**
+
+### 10.1 Persist call outcomes
+- [x] `structuredDataPlan`: `resolvedWithoutHuman`, `escalationRequested`, `followUpNeeded`, `followUpReason` (+ `sentiment`, which the workflow already read)
+- [x] `supabase/migrations/007_interaction_outcomes.sql`: outcome columns, `caller_phone_digits`, view `v_call_outcomes_daily`
+- [x] `end-of-call-report`: Parse EOC Envelope maps the new fields (NULL when missing); Build Outcome Patch + Merge Outcomes patch them onto rows `log_interaction` already wrote
+- [x] Tests: `tests/test_post_call_outcomes.py`
+
+### 10.2 Act on the outcome
+- [x] `supabase/migrations/008_follow_ups.sql`
+- [x] Decide Actions → Route Actions (Switch) → escalation (follow-up row + alert email) / SMS (Twilio) / callback (follow-up row)
+- [x] Recipient, sender and credential ids resolved from `.env` at deploy time; branches cannot fail the upsert or the response
+- [x] Tests: `tests/test_follow_up_routing.py`
+
+### 10.3 Recognise the caller before the agent speaks
+- [x] VAPI docs checked: `assistant-request` goes to the phone number's server URL and is not a `serverMessages` value
+- [x] Workflow `pre-call-context` (`.json` + `.md`) at `/webhook/pre-call-context`
+- [x] `scripts/configure-vapi-phone.sh enable|disable`
+- [x] System prompt sections 1 and 2 (recognised vs. standard flow; caller ID is not authentication)
+- [x] Tests: `tests/test_pre_call_context.py`
+
+### 10.4 Monitoring
+- [x] `grafana/dashboard.json`, `grafana/README.md` (read-only role SQL, data source, import)
+- [x] Tests: `tests/test_deploy_and_dashboard.py`
+
+### 10.5 Still to do with live accounts
+- [ ] Apply migrations 007 and 008
+- [ ] Create n8n SMTP and Twilio credentials; fill the new `.env` keys
+- [ ] `./scripts/deploy-vapi.sh`, `./scripts/deploy-n8n.sh`; paste the new `pre-call-context` workflow id into its JSON
+- [ ] curl the `pre-call-context` webhook with a known and an unknown number
+- [ ] `./scripts/configure-vapi-phone.sh enable`; confirm the `x-vapi-secret` header is set on the phone number
+- [ ] Call test: recognised caller, happy path (outcome columns, SMS)
+- [ ] Call test: unknown caller asks for a human (follow_ups row, alert email)
+- [ ] Capture one real `assistant-request` and one real `end-of-call-report` payload and compare with the test fixtures
+- [ ] Import the Grafana dashboard and compare with `SELECT * FROM v_call_outcomes_daily`
+- [ ] Regenerate `diagrams/architecture` and `diagrams/n8n-workflows` (text descriptions are updated; the `.excalidraw` / `.png` files are not)
+
+---
+
 ## Verification Checklist
 
 - [ ] `/airtable` — verify base schema, sample data

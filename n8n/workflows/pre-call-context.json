@@ -1,0 +1,250 @@
+{
+  "id": "",
+  "name": "Pre-Call Context",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pre-call-context",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-precall",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "pre-call-context",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PQXagW16N8ErYDM7",
+          "name": "VAPI Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst message = body.message || {};\nconst isAssistantRequest = message.type === 'assistant-request';\n\n// VAPI's docs do not pin down one path for the caller's number, so check the\n// documented candidates in order.\nconst raw = String(\n  message.call?.customer?.number ||\n  message.customer?.number ||\n  message.call?.from?.phoneNumber ||\n  ''\n).trim();\n\n// Normalize US phone to E.164 (same rules as lookup-caller's Parse Envelope)\nlet phone = raw;\nlet error = '';\nif (phone) {\n  const digits = phone.replace(/\\D/g, '');\n  if (digits.length === 10) phone = '+1' + digits;\n  else if (digits.length === 11 && digits[0] === '1') phone = '+' + digits;\n  else if (phone.startsWith('+') && digits.length >= 10) phone = '+' + digits;\n  else { error = 'invalid_phone'; phone = ''; }\n} else {\n  error = 'no_phone';   // withheld / anonymous caller ID\n}\n\nreturn [{\n  json: {\n    is_assistant_request: isAssistantRequest,\n    phone_number: phone,\n    // phone_digits strips '+', matching the customers.phone_digits generated column.\n    // '0' can never match a row, so a missing number is a guaranteed no-match\n    // instead of an unfiltered query.\n    phone_digits: phone ? phone.replace('+', '') : '0',\n    error\n  }\n}];"
+      },
+      "id": "parse-request",
+      "name": "Parse Assistant Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=__SUPABASE_URL__/rest/v1/customers",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "phone_digits",
+              "value": "=eq.{{ $json.phone_digits }}"
+            },
+            {
+              "name": "select",
+              "value": "id,first_name,claim_number,claim_status"
+            },
+            {
+              "name": "limit",
+              "value": "2"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 2500
+        }
+      },
+      "id": "http-customer",
+      "name": "Query Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const env = $('Parse Assistant Request').first().json;\n// A failed or timed-out lookup arrives here as an item without an id, and is\n// treated exactly like \"no match\".\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\n\n// Exactly one customer on this number = recognised. Zero, or several people\n// sharing a number, = unknown (we will not guess who is calling).\nconst known = env.is_assistant_request === true && rows.length === 1;\nconst r = known ? rows[0] : {};\n\nreturn [{\n  json: {\n    caller_known: known,\n    first_name: r.first_name || '',\n    claim_number: r.claim_number || '',\n    claim_status: r.claim_status || '',\n    phone_number: env.phone_number,\n    // only look up call history for a recognised caller\n    phone_digits: known ? env.phone_digits : '0'\n  }\n}];"
+      },
+      "id": "pick-customer",
+      "name": "Pick Customer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=__SUPABASE_URL__/rest/v1/interactions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "caller_phone_digits",
+              "value": "=eq.{{ $json.phone_digits }}"
+            },
+            {
+              "name": "select",
+              "value": "summary,sentiment,timestamp"
+            },
+            {
+              "name": "order",
+              "value": "timestamp.desc"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 2500
+        }
+      },
+      "id": "http-last",
+      "name": "Query Last Interaction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Replaced from .env by scripts/deploy-n8n.sh (deploy fails if it is not set).\nconst ASSISTANT_ID = '__VAPI_ASSISTANT_ID__';\n\nconst env = $('Parse Assistant Request').first().json;\nif (!env.is_assistant_request) {\n  return [{ json: {} }];   // not our event: acknowledge and do nothing\n}\n\nconst c = $('Pick Customer').first().json;\nconst last = $input.all().map(i => i.json)\n  .filter(r => r && r.timestamp && typeof r.summary === 'string')\n  .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))[0] || {};\n\n// A name is spoken aloud in the greeting: only letters, spaces, hyphens, apostrophes.\nconst cleanName = String(c.first_name || '').trim();\nconst nameOk = /^[\\p{L}][\\p{L} '\\-]{0,39}$/u.test(cleanName);\nconst known = c.caller_known === true && nameOk;\nconst sentiments = ['positive', 'neutral', 'negative'];\n\n// Values are strings on purpose: how VAPI renders booleans / nulls in a prompt\n// template is not documented.\nconst variableValues = {\n  callerKnown: known ? 'true' : 'false',\n  firstName: known ? cleanName : '',\n  claimNumber: known ? String(c.claim_number || '') : '',\n  claimStatus: known ? String(c.claim_status || '') : '',\n  lastCallSummary: known ? String(last.summary || '').replace(/\\s+/g, ' ').trim().substring(0, 300) : '',\n  lastCallSentiment: (known && sentiments.includes(last.sentiment)) ? last.sentiment : '',\n  callerNumber: known ? String(c.phone_number || '') : ''\n};\n\nconst assistantOverrides = { variableValues };\nif (known) {\n  // Unknown callers keep the assistant's own firstMessage, i.e. today's greeting.\n  assistantOverrides.firstMessage = 'Thank you for calling Observe Insurance, ' + cleanName +\n    '. This call may be monitored for quality assurance. My name is Sarah. Before I pull up your account, could you please verify your date of birth?';\n}\n\nreturn [{ json: { assistantId: ASSISTANT_ID, assistantOverrides } }];"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Assistant Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Assistant Request": {
+      "main": [
+        [
+          {
+            "node": "Query Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Customer": {
+      "main": [
+        [
+          {
+            "node": "Pick Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Customer": {
+      "main": [
+        [
+          {
+            "node": "Query Last Interaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Last Interaction": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
