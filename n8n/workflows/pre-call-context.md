@@ -1,12 +1,12 @@
 # Workflow 4: Pre-Call Context
 
-**Workflow ID:** not created yet (the first `./scripts/deploy-n8n.sh pre-call-context` creates it and prints the id to put in the `.json`) | **Webhook:** `POST /webhook/pre-call-context` | **7 nodes, linear pipeline**
+**Workflow ID:** not created yet (the first `./scripts/deploy-n8n.sh pre-call-context` creates it and prints the id to put in the `.json`) | **Webhook:** `POST /webhook/pre-call-context` | **9 nodes, linear pipeline**
 
 ```
-Webhook → Parse Assistant Request → Query Customer → Pick Customer → Query Last Interaction → Build Response → Respond
+Webhook → Parse Assistant Request → Query Customer → Pick Customer → Query Last Interaction → Collect Call Ids → Query Open Follow-up → Build Response → Respond
 ```
 
-Recognises the caller from their caller ID **before the agent says anything**, so a known caller is greeted by first name and asked only for their date of birth.
+Recognises the caller from their caller ID **before the agent says anything**, so a known caller is greeted by first name and asked only for their date of birth. It also finds any **open follow-up** (escalation or callback) still owed to that caller, so the agent acknowledges it after verification instead of opening a duplicate.
 
 > **Status:** written and unit-tested against VAPI's documented payloads. It has **not** been deployed or exercised by a real call. See "Not verified" at the bottom.
 
@@ -84,16 +84,31 @@ GET {SUPABASE_URL}/rest/v1/customers?phone_digits=eq.<digits>&select=id,first_na
 ## Node 5: Query Last Interaction (HTTP Request → Supabase REST)
 
 ```
-GET {SUPABASE_URL}/rest/v1/interactions?caller_phone_digits=eq.<digits>&select=summary,sentiment,timestamp&order=timestamp.desc&limit=1
+GET {SUPABASE_URL}/rest/v1/interactions?caller_phone_digits=eq.<digits>&select=vapi_call_id,summary,sentiment,timestamp&order=timestamp.desc&limit=5
 ```
 
-Same timeout and error settings as Node 3. `caller_phone_digits` is the caller ID stored by the End-of-Call Report workflow (migration `007`). `interactions.phone_number` cannot be used: it holds whatever number the caller *said*, in whatever format the LLM passed along.
+Same error settings as Node 3, **`timeout: 1500` ms** (see the 7.5 s budget below). Up to five recent calls are fetched: the newest one feeds `lastCall*`, and all of their `vapi_call_id`s feed the follow-up lookup in Node 6. `caller_phone_digits` is the caller ID stored by the End-of-Call Report workflow (migration `007`). `interactions.phone_number` cannot be used: it holds whatever number the caller *said*, in whatever format the LLM passed along.
 
 Calls made before migration 007 have no `caller_phone_digits`, so a returning caller's first call after deployment has no "last call".
 
 ---
 
-## Node 6: Build Response (Code node, JS)
+## Node 6: Collect Call Ids (Code node, JS)
+
+`follow_ups` has no phone column: it is keyed by `vapi_call_id`, a soft reference to `interactions` (no FK, by design in migration `008`). So the caller's follow-ups are found through the ids of their recent calls.
+
+- Recognised caller → `call_ids` = the `vapi_call_id`s from Node 5, comma-joined, ready for a PostgREST `in.(...)` filter. Ids are kept only if they match `[A-Za-z0-9_-]{1,64}`; anything else is dropped so a stray comma or parenthesis cannot change the filter.
+- Unknown caller, no history, or a failed history lookup → `call_ids` = `none`, which can never match a row.
+
+## Node 7: Query Open Follow-up (HTTP Request → Supabase REST)
+
+```
+GET {SUPABASE_URL}/rest/v1/follow_ups?vapi_call_id=in.(<ids>)&status=eq.open&select=kind,reason,created_at&order=created_at.desc&limit=1
+```
+
+Same error settings as Node 3, `timeout: 1500` ms. Only `status = open` rows count: once a human closes the follow-up, the agent stops mentioning it.
+
+## Node 8: Build Response (Code node, JS)
 
 Returns what VAPI expects:
 
@@ -108,7 +123,9 @@ Returns what VAPI expects:
       "claimStatus": "approved",
       "lastCallSummary": "Caller checked claim status. Claim approved.",
       "lastCallSentiment": "positive",
-      "callerNumber": "+14155551234"
+      "callerNumber": "+14155551234",
+      "openFollowUp": "callback",
+      "openFollowUpReason": "Caller asked for the adjuster to call back."
     },
     "firstMessage": "Thank you for calling Observe Insurance, Sarah. ... could you please verify your date of birth?"
   }
@@ -123,13 +140,15 @@ Returns what VAPI expects:
 | `lastCallSummary` | last summary, whitespace collapsed, max 300 chars | `""` |
 | `lastCallSentiment` | `positive` / `neutral` / `negative`, or `""` if no earlier call | `""` |
 | `callerNumber` | E.164 caller ID (lets the agent call `lookup_caller` without asking) | `""` |
+| `openFollowUp` | `escalation` / `callback` for the newest open follow-up, or `""` | `""` |
+| `openFollowUpReason` | its reason, whitespace collapsed, max 200 chars | `""` |
 
 Design points:
 
 - **All values are strings.** VAPI does not document how booleans or nulls render inside a prompt, and the prompt tests for the literal text `true`.
 - **The greeting is overridden with `assistantOverrides.firstMessage`, only for known callers.** Unknown callers get no `firstMessage` override, so they hear the assistant's own `firstMessage`: today's greeting, unchanged. This avoids relying on template conditionals inside `firstMessage`, which VAPI's docs do not confirm.
 - The first name is spoken aloud, so it must be letters/spaces/hyphens/apostrophes. Anything else downgrades the caller to unknown.
-- The greeting contains the first name and nothing else from the account.
+- The greeting contains the first name and nothing else from the account. The open follow-up is only ever mentioned after date-of-birth verification (system prompt section 2, rule 7).
 - `assistantId` comes from `__VAPI_ASSISTANT_ID__`, filled in from `.env` at deploy time. The deploy fails if it is unset.
 - A non-`assistant-request` event gets `{}`.
 
@@ -137,7 +156,7 @@ Design points:
 
 ---
 
-## Node 7: Respond (Respond to Webhook)
+## Node 9: Respond (Respond to Webhook)
 
 Sends `Build Response`'s JSON back to VAPI.
 
@@ -150,12 +169,13 @@ Sends `Build Response`'s JSON back to VAPI.
 | Unknown number | Default assistant, `callerKnown = "false"`, today's greeting |
 | Caller ID withheld / malformed | Same |
 | Supabase error or slower than 2.5 s on the customer lookup | Same (error item has no `id`) |
-| Supabase error on the history lookup | Caller still recognised, `lastCall*` empty |
+| Supabase error on the history lookup | Caller still recognised, `lastCall*` and `openFollowUp*` empty |
+| Supabase error on the follow-up lookup | Caller still recognised, `openFollowUp*` empty |
 | Two customers share the number | Default assistant, `callerKnown = "false"` |
 | Wrong/missing `x-vapi-secret` | n8n rejects the request → **VAPI fails the call** |
 | n8n Cloud down or the whole workflow exceeds 7.5 s | **VAPI fails the call**. Roll back with `configure-vapi-phone.sh disable` |
 
-Worst case inside the workflow is two timeouts, about 5 s, plus n8n overhead.
+Worst case inside the workflow is three timeouts, 2.5 + 1.5 + 1.5 = 5.5 s, plus n8n overhead. The two history lookups were cut from 2.5 s to 1.5 s each to make room for the follow-up lookup inside VAPI's 7.5 s deadline.
 
 ---
 

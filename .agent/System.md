@@ -224,7 +224,7 @@ FAQ insertion:
 
 **Analysis Plan**: `summaryPrompt` (custom prompt) + `structuredDataPlan` (callReason, authenticated, claimNumber, claimStatus, escalated, callerName, dobVerified, callbackPromised, faqTopics, authFailureReason, callDurationCategory; repo version adds sentiment, resolvedWithoutHuman, escalationRequested, followUpNeeded, followUpReason)
 
-**Pre-call variables** (repo version, set by `pre-call-context` through `assistantOverrides.variableValues`, referenced in system prompt sections 1 and 2): `callerKnown` (`"true"`/`"false"`), `firstName`, `claimNumber`, `claimStatus`, `lastCallSummary`, `lastCallSentiment`, `callerNumber`. A recognised caller also gets an overridden `firstMessage` (first name + request for date of birth). `serverMessages` is unchanged: `assistant-request` is not a valid value there and is delivered to the phone number's server URL instead.
+**Pre-call variables** (repo version, set by `pre-call-context` through `assistantOverrides.variableValues`, referenced in system prompt sections 1 and 2): `callerKnown` (`"true"`/`"false"`), `firstName`, `claimNumber`, `claimStatus`, `lastCallSummary`, `lastCallSentiment`, `callerNumber`, `openFollowUp` (`escalation`/`callback`/`""`), `openFollowUpReason`. A recognised caller also gets an overridden `firstMessage` (first name + request for date of birth). `serverMessages` is unchanged: `assistant-request` is not a valid value there and is delivered to the phone number's server URL instead.
 
 **Phone number routing for pre-call recognition:** the number must have no assistant assigned and its server URL must point at `/webhook/pre-call-context` (`scripts/configure-vapi-phone.sh enable`). Currently the number is still assigned directly to the assistant.
 

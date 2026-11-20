@@ -62,6 +62,7 @@ class TestPlaceholderResolution:
         assert urls == [
             "=https://example-ref.supabase.co/rest/v1/customers",
             "=https://example-ref.supabase.co/rest/v1/interactions",
+            "=https://example-ref.supabase.co/rest/v1/follow_ups",
         ]
 
     @pytest.mark.parametrize("bad", ["x'; process.exit(); '", 'a"b', "={{ $env.SECRET }}", "line\nbreak"])
