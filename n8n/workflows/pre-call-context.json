@@ -112,7 +112,7 @@
             },
             {
               "name": "select",
-              "value": "summary,sentiment,timestamp"
+              "value": "vapi_call_id,summary,sentiment,timestamp"
             },
             {
               "name": "order",
@@ -120,12 +120,12 @@
             },
             {
               "name": "limit",
-              "value": "1"
+              "value": "5"
             }
           ]
         },
         "options": {
-          "timeout": 2500
+          "timeout": 1500
         }
       },
       "id": "http-last",
@@ -147,14 +147,79 @@
     },
     {
       "parameters": {
-        "jsCode": "// Replaced from .env by scripts/deploy-n8n.sh (deploy fails if it is not set).\nconst ASSISTANT_ID = '__VAPI_ASSISTANT_ID__';\n\nconst env = $('Parse Assistant Request').first().json;\nif (!env.is_assistant_request) {\n  return [{ json: {} }];   // not our event: acknowledge and do nothing\n}\n\nconst c = $('Pick Customer').first().json;\nconst last = $input.all().map(i => i.json)\n  .filter(r => r && r.timestamp && typeof r.summary === 'string')\n  .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))[0] || {};\n\n// A name is spoken aloud in the greeting: only letters, spaces, hyphens, apostrophes.\nconst cleanName = String(c.first_name || '').trim();\nconst nameOk = /^[\\p{L}][\\p{L} '\\-]{0,39}$/u.test(cleanName);\nconst known = c.caller_known === true && nameOk;\nconst sentiments = ['positive', 'neutral', 'negative'];\n\n// Values are strings on purpose: how VAPI renders booleans / nulls in a prompt\n// template is not documented.\nconst variableValues = {\n  callerKnown: known ? 'true' : 'false',\n  firstName: known ? cleanName : '',\n  claimNumber: known ? String(c.claim_number || '') : '',\n  claimStatus: known ? String(c.claim_status || '') : '',\n  lastCallSummary: known ? String(last.summary || '').replace(/\\s+/g, ' ').trim().substring(0, 300) : '',\n  lastCallSentiment: (known && sentiments.includes(last.sentiment)) ? last.sentiment : '',\n  callerNumber: known ? String(c.phone_number || '') : ''\n};\n\nconst assistantOverrides = { variableValues };\nif (known) {\n  // Unknown callers keep the assistant's own firstMessage, i.e. today's greeting.\n  assistantOverrides.firstMessage = 'Thank you for calling Observe Insurance, ' + cleanName +\n    '. This call may be monitored for quality assurance. My name is Sarah. Before I pull up your account, could you please verify your date of birth?';\n}\n\nreturn [{ json: { assistantId: ASSISTANT_ID, assistantOverrides } }];"
+        "jsCode": "// The open-follow-up lookup needs call ids: follow_ups has no phone column\n// (it is keyed by vapi_call_id, a soft reference to interactions). The ids of\n// this caller's recent calls come from Query Last Interaction. Build Response\n// reads those same rows again through $('Query Last Interaction').\nconst c = $('Pick Customer').first().json;\nconst ids = c.caller_known === true\n  ? $input.all().map(i => i.json)\n      .filter(r => r && typeof r.vapi_call_id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(r.vapi_call_id))\n      .map(r => r.vapi_call_id)\n  : [];\n\n// PostgREST `in.(...)` list. 'none' can never be a VAPI call id, so an unknown\n// caller or a caller with no history gets a guaranteed empty result instead of\n// an unfiltered query.\nreturn [{ json: { call_ids: ids.length ? ids.join(',') : 'none' } }];\n"
+      },
+      "id": "code-call-ids",
+      "name": "Collect Call Ids",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=__SUPABASE_URL__/rest/v1/follow_ups",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "vapi_call_id",
+              "value": "=in.({{ $json.call_ids }})"
+            },
+            {
+              "name": "status",
+              "value": "eq.open"
+            },
+            {
+              "name": "select",
+              "value": "kind,reason,created_at"
+            },
+            {
+              "name": "order",
+              "value": "created_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 1500
+        }
+      },
+      "id": "http-followups",
+      "name": "Query Open Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "Zhs4bVeCvuPXCQkF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Replaced from .env by scripts/deploy-n8n.sh (deploy fails if it is not set).\nconst ASSISTANT_ID = '__VAPI_ASSISTANT_ID__';\n\nconst env = $('Parse Assistant Request').first().json;\nif (!env.is_assistant_request) {\n  return [{ json: {} }];   // not our event: acknowledge and do nothing\n}\n\nconst c = $('Pick Customer').first().json;\nconst last = $('Query Last Interaction').all().map(i => i.json)\n  .filter(r => r && r.timestamp && typeof r.summary === 'string')\n  .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))[0] || {};\n\n// A name is spoken aloud in the greeting: only letters, spaces, hyphens, apostrophes.\nconst cleanName = String(c.first_name || '').trim();\nconst nameOk = /^[\\p{L}][\\p{L} '\\-]{0,39}$/u.test(cleanName);\nconst known = c.caller_known === true && nameOk;\nconst sentiments = ['positive', 'neutral', 'negative'];\n\n// Newest open follow-up for this caller (escalation or callback), or nothing.\n// A failed or timed-out lookup arrives as an item without a kind.\nconst kinds = ['escalation', 'callback'];\nconst follow = $input.all().map(i => i.json).filter(r => r && kinds.includes(r.kind))[0] || {};\n\n// Values are strings on purpose: how VAPI renders booleans / nulls in a prompt\n// template is not documented.\nconst variableValues = {\n  callerKnown: known ? 'true' : 'false',\n  firstName: known ? cleanName : '',\n  claimNumber: known ? String(c.claim_number || '') : '',\n  claimStatus: known ? String(c.claim_status || '') : '',\n  lastCallSummary: known ? String(last.summary || '').replace(/\\s+/g, ' ').trim().substring(0, 300) : '',\n  lastCallSentiment: (known && sentiments.includes(last.sentiment)) ? last.sentiment : '',\n  callerNumber: known ? String(c.phone_number || '') : '',\n  openFollowUp: known ? String(follow.kind || '') : '',\n  openFollowUpReason: (known && follow.kind) ? String(follow.reason || '').replace(/\\s+/g, ' ').trim().substring(0, 200) : ''\n};\n\nconst assistantOverrides = { variableValues };\nif (known) {\n  // Unknown callers keep the assistant's own firstMessage, i.e. today's greeting.\n  assistantOverrides.firstMessage = 'Thank you for calling Observe Insurance, ' + cleanName +\n    '. This call may be monitored for quality assurance. My name is Sarah. Before I pull up your account, could you please verify your date of birth?';\n}\n\nreturn [{ json: { assistantId: ASSISTANT_ID, assistantOverrides } }];"
       },
       "id": "build-response",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
+        1540,
         0
       ]
     },
@@ -169,7 +234,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1320,
+        1760,
         0
       ]
     }
@@ -220,6 +285,28 @@
       ]
     },
     "Query Last Interaction": {
+      "main": [
+        [
+          {
+            "node": "Collect Call Ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Call Ids": {
+      "main": [
+        [
+          {
+            "node": "Query Open Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Open Follow-up": {
       "main": [
         [
           {

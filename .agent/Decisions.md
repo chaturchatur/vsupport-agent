@@ -214,3 +214,9 @@ Each decision entry follows this format:
 **Context:** The EOC workflow has always read `structuredData.sentiment`, but the field was never declared, so the report-side sentiment was always `neutral` (same class of bug as the earlier `callerName` fix). The new negative-sentiment branch would never fire for calls the LLM did not log.
 **Decision:** Declare `sentiment` (enum) in the schema alongside the four new outcome fields. Existing field names are unchanged.
 **Alternatives considered:** Leaving it (the escalation branch would silently miss dropped, angry calls).
+
+### [2026-11-19] Pre-call context surfaces the caller's open follow-up
+**Status:** accepted (unit-tested; not yet run on n8n Cloud)
+**Context:** A caller who was promised a callback and calls again was greeted as if nothing was pending; the agent would promise a second callback and the end-of-call workflow would try to open a second `follow_ups` row (blocked only by the per-call unique constraint).
+**Decision:** `pre-call-context` fetches the newest `status = open` row in `follow_ups` for the caller's recent `vapi_call_id`s and passes `openFollowUp` / `openFollowUpReason` as prompt variables. The prompt acknowledges it after DOB verification and tags the summary `EXISTING FOLLOW-UP:` instead of `CALLBACK PROMISED:`.
+**Why:** `follow_ups` is keyed by `vapi_call_id` with no phone column, so the lookup goes through the ids of the caller's last five interactions rather than adding a column and touching the end-of-call workflow. Two 1.5 s timeouts plus the 2.5 s customer lookup keep the worst case at 5.5 s inside VAPI's 7.5 s deadline.

@@ -20,13 +20,16 @@ ASSISTANT_ID = "asst-test-0001"
 VARIABLES = {
     "callerKnown", "firstName", "claimNumber", "claimStatus",
     "lastCallSummary", "lastCallSentiment", "callerNumber",
+    "openFollowUp", "openFollowUpReason",
 }
 CUSTOMER = {"id": 1, "first_name": "Sarah", "claim_number": "CLM-2024-001", "claim_status": "approved"}
 LAST_CALL = {
+    "vapi_call_id": "call-prev-001",
     "summary": "Caller checked claim status.\nClaim approved.",
     "sentiment": "negative",
     "timestamp": "2026-11-09T15:00:00+00:00",
 }
+OPEN_CALLBACK = {"kind": "callback", "reason": "Caller asked  for the\nadjuster to call back.", "created_at": "2026-11-09T15:05:00+00:00"}
 
 
 def _make_assistant_request(number: str | None = "+14155551234", call_id: str = "call-abc123"):
@@ -51,14 +54,18 @@ def respond(tmp_path):
     """Run the whole Code-node chain and return the body VAPI would receive."""
     path = resolved_copy(WORKFLOW, {"VAPI_ASSISTANT_ID": ASSISTANT_ID}, tmp_path)
 
-    def _respond(envelope: dict, customer_rows: list, interaction_rows: list) -> dict:
+    def _respond(envelope: dict, customer_rows: list, interaction_rows: list, follow_up_rows: list | None = None) -> dict:
         parsed = _parse(envelope)
         picked = run_code_node(WORKFLOW, "Pick Customer", customer_rows, {"Parse Assistant Request": [parsed]})[0]
         return run_code_node(
             WORKFLOW,
             "Build Response",
-            interaction_rows,
-            {"Parse Assistant Request": [parsed], "Pick Customer": [picked]},
+            follow_up_rows if follow_up_rows is not None else [{}],
+            {
+                "Parse Assistant Request": [parsed],
+                "Pick Customer": [picked],
+                "Query Last Interaction": interaction_rows,
+            },
             workflow_path=path,
         )[0]
 
@@ -147,6 +154,8 @@ class TestResponse:
         assert values["lastCallSummary"] == "Caller checked claim status. Claim approved."
         assert values["lastCallSentiment"] == "negative"
         assert values["callerNumber"] == "+14155551234"
+        assert values["openFollowUp"] == ""
+        assert values["openFollowUpReason"] == ""
 
     def test_known_caller_greeting_uses_first_name_and_asks_only_for_dob(self, respond):
         greeting = respond(_make_assistant_request(), [CUSTOMER], [LAST_CALL])["assistantOverrides"]["firstMessage"]
@@ -222,6 +231,70 @@ class TestResponse:
         assert "date_of_birth" not in json.dumps(workflow)
 
 
+def _collect(envelope: dict, customer_rows: list, interaction_rows: list) -> dict:
+    parsed = _parse(envelope)
+    picked = run_code_node(WORKFLOW, "Pick Customer", customer_rows, {"Parse Assistant Request": [parsed]})[0]
+    return run_code_node(WORKFLOW, "Collect Call Ids", interaction_rows, {"Pick Customer": [picked]})[0]
+
+
+class TestCollectCallIds:
+    def test_known_caller_ids_joined_for_postgrest_in_filter(self):
+        rows = [LAST_CALL, {**LAST_CALL, "vapi_call_id": "call-prev-002"}]
+        assert _collect(_make_assistant_request(), [CUSTOMER], rows) == {"call_ids": "call-prev-001,call-prev-002"}
+
+    def test_unknown_caller_never_queries_follow_ups(self):
+        assert _collect(_make_assistant_request("+19995550000"), [{}], [LAST_CALL]) == {"call_ids": "none"}
+
+    def test_no_history_gives_sentinel(self):
+        assert _collect(_make_assistant_request(), [CUSTOMER], [{}]) == {"call_ids": "none"}
+
+    def test_failed_history_lookup_gives_sentinel(self):
+        assert _collect(_make_assistant_request(), [CUSTOMER], [{"error": "ETIMEDOUT"}]) == {"call_ids": "none"}
+
+    def test_call_ids_that_could_break_the_filter_are_dropped(self):
+        """The ids go inside a PostgREST in.(...) list: commas and parentheses must not get through."""
+        bad = {**LAST_CALL, "vapi_call_id": "x),status.neq.(y"}
+        assert _collect(_make_assistant_request(), [CUSTOMER], [bad, LAST_CALL]) == {"call_ids": "call-prev-001"}
+
+
+class TestOpenFollowUp:
+    def test_open_callback_is_passed_to_the_prompt(self, respond):
+        values = respond(_make_assistant_request(), [CUSTOMER], [LAST_CALL], [OPEN_CALLBACK])["assistantOverrides"]["variableValues"]
+        assert values["openFollowUp"] == "callback"
+        assert values["openFollowUpReason"] == "Caller asked for the adjuster to call back."
+
+    def test_open_escalation_is_passed_to_the_prompt(self, respond):
+        row = {**OPEN_CALLBACK, "kind": "escalation", "reason": "asked for a human"}
+        values = respond(_make_assistant_request(), [CUSTOMER], [LAST_CALL], [row])["assistantOverrides"]["variableValues"]
+        assert values["openFollowUp"] == "escalation"
+        assert values["openFollowUpReason"] == "asked for a human"
+
+    def test_follow_up_never_reaches_the_greeting(self, respond):
+        greeting = respond(_make_assistant_request(), [CUSTOMER], [LAST_CALL], [OPEN_CALLBACK])["assistantOverrides"]["firstMessage"]
+        assert "call back" not in greeting
+        assert "adjuster" not in greeting
+
+    def test_unknown_kind_is_ignored(self, respond):
+        values = respond(_make_assistant_request(), [CUSTOMER], [LAST_CALL], [{"kind": "refund", "reason": "x"}])["assistantOverrides"]["variableValues"]
+        assert values["openFollowUp"] == ""
+        assert values["openFollowUpReason"] == ""
+
+    def test_failed_follow_up_lookup_keeps_caller_recognised(self, respond):
+        values = respond(_make_assistant_request(), [CUSTOMER], [LAST_CALL], [{"error": "ETIMEDOUT"}])["assistantOverrides"]["variableValues"]
+        assert values["callerKnown"] == "true"
+        assert values["lastCallSentiment"] == "negative"
+        assert values["openFollowUp"] == ""
+
+    def test_long_reason_is_truncated(self, respond):
+        values = respond(_make_assistant_request(), [CUSTOMER], [LAST_CALL], [{**OPEN_CALLBACK, "reason": "r" * 1000}])["assistantOverrides"]["variableValues"]
+        assert len(values["openFollowUpReason"]) == 200
+
+    def test_unknown_caller_gets_no_follow_up_even_if_rows_arrive(self, respond):
+        values = respond(_make_assistant_request("+19995550000"), [{}], [{}], [OPEN_CALLBACK])["assistantOverrides"]["variableValues"]
+        assert values["openFollowUp"] == ""
+        assert values["openFollowUpReason"] == ""
+
+
 class TestWorkflowWiring:
     def test_webhook_path_and_auth(self):
         webhook = get_node(load_workflow(WORKFLOW), "Webhook")
@@ -230,15 +303,15 @@ class TestWorkflowWiring:
         assert webhook["parameters"]["responseMode"] == "responseNode"
 
     def test_lookups_are_time_boxed_and_cannot_fail_the_call(self):
-        """Two lookups must fit inside VAPI's fixed 7.5 s budget, and errors must fall through."""
+        """Three lookups must fit inside VAPI's fixed 7.5 s budget, and errors must fall through."""
         workflow = load_workflow(WORKFLOW)
         total_ms = 0
-        for name in ("Query Customer", "Query Last Interaction"):
+        for name in ("Query Customer", "Query Last Interaction", "Query Open Follow-up"):
             node = get_node(workflow, name)
             total_ms += node["parameters"]["options"]["timeout"]
             assert node["onError"] == "continueRegularOutput"
             assert node["alwaysOutputData"] is True
-        assert total_ms <= 5000
+        assert total_ms <= 5500
 
     def test_customer_lookup_uses_phone_digits(self):
         params = get_node(load_workflow(WORKFLOW), "Query Customer")["parameters"]["queryParameters"]["parameters"]
@@ -252,8 +325,13 @@ class TestWorkflowWiring:
             chain.append(node)
         assert chain == [
             "Webhook", "Parse Assistant Request", "Query Customer", "Pick Customer",
-            "Query Last Interaction", "Build Response", "Respond",
+            "Query Last Interaction", "Collect Call Ids", "Query Open Follow-up", "Build Response", "Respond",
         ]
+
+    def test_follow_up_lookup_only_returns_open_rows(self):
+        params = get_node(load_workflow(WORKFLOW), "Query Open Follow-up")["parameters"]["queryParameters"]["parameters"]
+        assert {"name": "status", "value": "eq.open"} in params
+        assert {"name": "vapi_call_id", "value": "=in.({{ $json.call_ids }})"} in params
 
     def test_no_environment_specific_values_committed(self):
         text = (REPO_ROOT / "n8n" / "workflows" / f"{WORKFLOW}.json").read_text(encoding="utf-8")
@@ -287,5 +365,6 @@ class TestAssistantConfig:
             assert "{{" + name + "}}" in prompt, name
         assert "Caller ID is NOT authentication" in prompt
         assert "last call sentiment is negative" in prompt
+        assert "EXISTING FOLLOW-UP:" in prompt
         # the unknown-caller path still asks for the phone number, as before
         assert "Ask the caller for the phone number on their account." in prompt

@@ -183,7 +183,7 @@ Four workflows, all authenticated via `X-Vapi-Secret` header. The first three ru
 | **Lookup Caller** | `/webhook/lookup-caller` | Account lookup by phone, last name, or claim number |
 | **Log Interaction** | `/webhook/log-interaction` | Log call summary, sentiment, caller info |
 | **End-of-Call Report** | `/webhook/vapi-server` | Post-call report with dedup, call outcomes, follow-ups, alert email, claim-status SMS |
-| **Pre-Call Context** | `/webhook/pre-call-context` | Answers VAPI's `assistant-request`: recognises the caller and returns greeting variables |
+| **Pre-Call Context** | `/webhook/pre-call-context` | Answers VAPI's `assistant-request`: recognises the caller, finds any open follow-up owed to them, returns greeting variables |
 
 ## VAPI Assistant
 
@@ -248,7 +248,7 @@ pytest tests/ -v
 | `test_vapi_envelope.py` | 10 | VAPI tool-call & EOC envelope parsing |
 | `test_post_call_outcomes.py` | 21 | Analysis schema, outcome mapping with missing fields, outcome merge, migration 007 |
 | `test_follow_up_routing.py` | 39 | Escalation / SMS / callback conditions, SMS guard rails, failure isolation |
-| `test_pre_call_context.py` | 38 | `assistant-request` envelope, known / unknown / error responses, prompt variables |
+| `test_pre_call_context.py` | 51 | `assistant-request` envelope, known / unknown / error responses, prompt variables |
 | `test_deploy_and_dashboard.py` | 20 | Deploy-time placeholder resolution, Grafana dashboard structure |
 
 ## Documentation
